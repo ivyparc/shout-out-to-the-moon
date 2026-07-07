@@ -1,0 +1,28 @@
+{
+  "name": "shout-out-to-the-moon",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.2",
+    "expo": "^53.0.0",
+    "expo-localization": "^16.1.6",
+    "expo-status-bar": "^2.2.3",
+    "expo-tracking-transparency": "^5.2.4",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "react-native-web": "^0.20.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  }
+}

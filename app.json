@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Shout Out to the Moon",
+    "slug": "shout-out-to-the-moon",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "shoutmoon",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ivyparc.shoutouttothemoon",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "The microphone is used to measure your shout volume and move the rocket.",
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+      }
+    },
+    "android": {
+      "package": "com.ivyparc.shoutouttothemoon",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "locales": {
+      "ko": "./src/native-locales/ko.json",
+      "ja": "./src/native-locales/ja.json",
+      "zh-Hans": "./src/native-locales/zh-Hans.json",
+      "zh-Hant": "./src/native-locales/zh-Hant.json"
+    }
+  }
+}
