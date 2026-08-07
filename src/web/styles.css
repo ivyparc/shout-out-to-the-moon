@@ -1,0 +1,305 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  background: #f5f7fb;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.top {
+  text-align: center;
+}
+
+.top h1 {
+  margin: 0;
+  color: #2e3747;
+  font-size: 22px;
+}
+
+.top p,
+.bottom p {
+  margin: 4px 0 0;
+  color: #536072;
+  font-size: 13px;
+}
+
+.phone {
+  overflow: hidden;
+  border: 2px solid #4f5763;
+  background: white;
+}
+
+.sky {
+  position: relative;
+  height: calc(100% - 162px);
+  overflow: hidden;
+  background: #eeeeee;
+}
+
+.hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #2d3440;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.timer,
+.phase {
+  border: 1px solid rgba(79, 87, 99, 0.35);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.stage-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
+}
+
+.stage-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 2px solid #777777;
+  color: rgba(0, 0, 0, 0.82);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.stage-letter {
+  position: absolute;
+  left: 10px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.stage-name {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1;
+  text-align: right;
+}
+
+.cloud {
+  position: absolute;
+  z-index: 2;
+  width: 140px;
+  height: 44px;
+  border-radius: 24px;
+  border: 2px solid #4f5763;
+  background: #d7f4fb;
+}
+
+.cloud-one {
+  bottom: 8%;
+  left: 10%;
+  width: 70px;
+  height: 28px;
+}
+
+.cloud-two {
+  bottom: 7%;
+  right: 12%;
+  width: 74px;
+  height: 26px;
+}
+
+.moon {
+  position: absolute;
+  top: 4%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translateX(-50%);
+  image-rendering: auto;
+  z-index: 5;
+}
+
+.center-message {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  color: #101317;
+  font-size: 34px;
+  font-weight: 900;
+  text-align: center;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.rocket {
+  position: absolute;
+  left: 50%;
+  width: 24px;
+  height: 48px;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  z-index: 3;
+}
+
+.rocket-art {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+}
+
+.flame {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.landing-scene {
+  position: absolute;
+  top: 4%;
+  left: 50%;
+  width: 96px;
+  height: 96px;
+  transform: translate(-50%, -20%);
+  display: none;
+  object-fit: contain;
+  z-index: 4;
+}
+
+.landing-scene.visible {
+  display: block;
+}
+
+.hidden {
+  display: none;
+}
+
+.meter {
+  width: 100%;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border: 0;
+  border-top: 2px solid #a8a69c;
+  color: #555d68;
+  background: #d8edff;
+  cursor: pointer;
+}
+
+.meter strong {
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.meter span {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.test-label {
+  height: 24px;
+  border-top: 2px solid #a8a69c;
+  color: #5f6470;
+  background: #fff4c9;
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: 76px;
+  background: #fff4c9;
+}
+
+.buttons button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-top: 2px solid #a8a69c;
+  border-right: 2px solid #a8a69c;
+  background: transparent;
+  color: #101317;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 28px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.buttons button.active {
+  background: #fff900;
+}
+
+.buttons button span {
+  pointer-events: none;
+}
+
+.bottom {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.bottom button {
+  min-height: 32px;
+  border: 1px solid #cfd6e1;
+  border-radius: 6px;
+  color: #4d5868;
+  background: white;
+}
+
+.bottom select {
+  min-height: 32px;
+  border: 1px solid #cfd6e1;
+  border-radius: 6px;
+  color: #4d5868;
+  background: white;
+}

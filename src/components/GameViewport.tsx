@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { BASE_ASPECT_RATIO } from "../constants/layout";
-import { clampDb, getDbRange, getFlameLevel, getRocketProgress } from "../game/db";
+import { clampDb, getDbRange, getDecayedDb, getFlameLevel, getRocketProgress } from "../game/db";
 import { GameCopy } from "../i18n/strings";
 import { startMicrophoneMeter } from "../services/microphoneMeter";
 import { AppText } from "./AppText";
@@ -24,6 +24,8 @@ export function GameViewport({ copy }: Props) {
   const progressRef = useRef(0);
   const dbRef = useRef(0);
   const lastTickRef = useRef(Date.now());
+  const lastDbInputRef = useRef(Date.now());
+  const dbDecayMsRef = useRef(0);
 
   const maxBoardWidth = Math.min(Math.max(width - 32, 260), 520);
   const maxBoardHeight = Math.max(height - 210, 560);
@@ -32,6 +34,7 @@ export function GameViewport({ copy }: Props) {
   const range = getDbRange(currentDb);
   const flameLevel = getFlameLevel(currentDb);
   const isLanded = progress >= 1;
+  const displayedCurrentDb = Math.round(currentDb);
 
   const resetGame = useCallback(() => {
     setCountdown(3);
@@ -40,12 +43,16 @@ export function GameViewport({ copy }: Props) {
     setProgress(0);
     progressRef.current = 0;
     dbRef.current = 0;
+    dbDecayMsRef.current = 0;
     lastTickRef.current = Date.now();
+    lastDbInputRef.current = Date.now();
   }, []);
 
   const setMeasuredDb = useCallback((db: number) => {
     const clamped = clampDb(db);
     dbRef.current = clamped;
+    dbDecayMsRef.current = 0;
+    lastDbInputRef.current = Date.now();
     setCurrentDb(clamped);
     setMaxDb((previous) => Math.max(previous, clamped));
   }, []);
@@ -94,7 +101,24 @@ export function GameViewport({ copy }: Props) {
       const now = Date.now();
       const delta = now - lastTickRef.current;
       lastTickRef.current = now;
-      const nextProgress = getRocketProgress(progressRef.current, dbRef.current, delta);
+      const timeSinceDbInput = now - lastDbInputRef.current;
+      const isDbDecaying = countdown === 0 && dbRef.current > 0 && timeSinceDbInput > 450;
+      if (isDbDecaying) {
+        dbDecayMsRef.current += delta;
+        const decayedDb = getDecayedDb(dbRef.current, delta, dbDecayMsRef.current / 1000);
+        dbRef.current = decayedDb;
+        setCurrentDb(decayedDb);
+      } else {
+        dbDecayMsRef.current = 0;
+      }
+
+      const nextProgress = getRocketProgress(
+        progressRef.current,
+        dbRef.current,
+        delta,
+        isDbDecaying,
+        dbDecayMsRef.current / 1000,
+      );
       progressRef.current = nextProgress;
       setProgress(nextProgress);
     }, 50);
@@ -125,7 +149,7 @@ export function GameViewport({ copy }: Props) {
       </View>
       <Pressable accessibilityRole="button" onPress={resetGame} style={styles.meterBar}>
         <AppText style={styles.dbText}>
-          {copy.currentDb}: {currentDb} dB
+          {copy.currentDb}: {displayedCurrentDb} dB
         </AppText>
         <AppText style={styles.maxText}>
           {copy.maxDb}: {maxDb} dB

@@ -27,6 +27,7 @@ const styles = StyleSheet.create({
     width: 78,
     height: 176,
     alignItems: "center",
+    transform: [{ scale: 0.1 }],
   },
   nose: {
     width: 48,
