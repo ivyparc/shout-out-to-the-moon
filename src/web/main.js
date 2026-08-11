@@ -1,11 +1,25 @@
 const BASE_WIDTH = 1179;
 const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
-const GAME_SECONDS = 60;
-const CLAP_WINDOW_MS = 4000;
+const ENERGY_SECONDS = 30;
+const UFO_TRIGGER_PROGRESS = 0.03;
+const UFO_END_PROGRESS = 0.62;
+const MOON_TRIGGER_PROGRESS = 0.62;
+const MOON_APPEAR_PROGRESS = 0.36;
+const WORLD_SCROLL_PIXELS = 780;
+const CLOUD_SCROLL_PIXELS = 360;
+const CLAP_WINDOW_MS = 8000;
 const CLAP_MIN_GAP_MS = 260;
 const CLAP_DB_THRESHOLD = 72;
-const CLAP_START_PROGRESS = 0.86;
+const HOLD_TARGET_MIN = 50;
+const HOLD_TARGET_MAX = 60;
+const HOLD_REQUIRED_MS = 5000;
+const HOLD_FAIL_GRACE_MS = 2200;
+const HOLD_START_GRACE_MS = 1500;
+const CLAP_MIN_ENERGY_MS = 12000;
+const HOLD_MIN_ENERGY_MS = 10000;
+const LAUNCH_WORDS = ["launch", "launched", "launches", "lunch", "런치", "론치"];
+const REPLAY_WORDS = ["replay", "yes", "restart", "again", "예스", "다시", "리플레이"];
 
 const DB_RANGES = [
   { id: "20-40", min: 20, max: 40, label: ["20", "40"] },
@@ -15,51 +29,65 @@ const DB_RANGES = [
   { id: "100+", min: 100, max: 110, label: ["100", "+"] },
 ];
 
-const STAGES = [
-  { key: "F", name: "우주" },
-  { key: "E", name: "외기권" },
-  { key: "D", name: "열권" },
-  { key: "C", name: "중간권" },
-  { key: "B", name: "성층권" },
-  { key: "A", name: "대류권" },
+const CLOUDS = [
+  { x: 0.12, y: 0.82, scale: 0.75, front: true, delay: 0 },
+  { x: 0.62, y: 0.7, scale: 0.55, front: false, delay: 0.25 },
+  { x: 0.2, y: 0.48, scale: 0.6, front: true, delay: 0.5 },
+  { x: 0.68, y: 0.3, scale: 0.5, front: false, delay: 0.75 },
 ];
 
 const STRINGS = {
   ko: {
     title: "Shout Out to the Moon",
-    subtitle: "Launch라고 외친 뒤, 소리 크기로 로켓을 달까지 보내세요.",
+    subtitle: "Launch라고 외친 뒤, dB로 로켓을 달까지 보내세요.",
     current: "현재",
     max: "최대",
     test: "테스트 dB",
-    timer: "타이머",
+    timer: "Energy",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
-    clapPrompt: "Clap 3 times",
-    clapCount: "박수",
-    clapPenalty: "실패: -10초",
+    clapPrompt: "박수 3번 쳐 주세요!",
+    holdPrompt: "50~60dB를 5초간 유지해 주세요.",
     landing: "Landing...",
-    landed: "달 착륙!",
-    failed: "시간 종료",
+    landedTitle: "Congratulations!",
+    landedBody: "You've landed successfully.",
+    replayPrompt: "Replay?",
+    failed: "Game Over",
     micStatus: "마이크를 허용하면 실제 소리로 플레이할 수 있습니다.",
     speechUnsupported: "Speech Recognition is not available in this browser.",
+    voiceEnable: "Voice",
+    voiceReady: "Launch 음성 인식 대기 중",
+    voiceHeard: "인식",
+    clapFailed: "박수 3번을 완료하지 못했습니다.",
+    holdFailed: "50~60dB 유지에 실패했습니다.",
+    ufoFailed: "UFO와 충돌했습니다.",
+    energyFailed: "Energy가 0이 되었습니다.",
   },
   en: {
     title: "Shout Out to the Moon",
-    subtitle: "Say Launch, then use your voice volume to fly to the moon.",
+    subtitle: "Say Launch, then use dB to fly to the moon.",
     current: "Current",
     max: "Max",
     test: "Test dB",
-    timer: "Timer",
+    timer: "Energy",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
-    clapPrompt: "Clap 3 times",
-    clapCount: "Claps",
-    clapPenalty: "Failed: -10s",
+    clapPrompt: "Clap 3 times!",
+    holdPrompt: "Hold 50-60dB for 5 seconds.",
     landing: "Landing...",
-    landed: "Moon landing!",
-    failed: "Time up",
+    landedTitle: "Congratulations!",
+    landedBody: "You've landed successfully.",
+    replayPrompt: "Replay?",
+    failed: "Game Over",
     micStatus: "Allow microphone access to play with real sound.",
     speechUnsupported: "Speech Recognition is not available in this browser.",
+    voiceEnable: "Voice",
+    voiceReady: "Listening for Launch",
+    voiceHeard: "Heard",
+    clapFailed: "Clap challenge failed.",
+    holdFailed: "50-60dB hold failed.",
+    ufoFailed: "Hit by UFO.",
+    energyFailed: "Energy reached zero.",
   },
 };
 
@@ -69,46 +97,59 @@ const state = {
   db: 0,
   maxDb: 0,
   progress: 0,
-  timeLeftMs: GAME_SECONDS * 1000,
+  timeLeftMs: ENERGY_SECONDS * 1000,
   lastTick: Date.now(),
-  lastDbInputAt: Date.now(),
   manualModeUntil: 0,
   lastButtonActionAt: 0,
   clapCount: 0,
   clapStartedAt: 0,
   lastClapAt: 0,
+  holdMs: 0,
+  holdOutMs: 0,
+  holdStartedAt: 0,
   status: "",
   speechStatus: "",
+  heardSpeech: "",
+  ufoSeed: Math.random(),
+  landingStartedAt: 0,
+};
+
+const speech = {
+  recognition: null,
+  isListening: false,
+  shouldListen: true,
+  hasUserGesture: false,
+  restartTimer: 0,
 };
 
 const root = document.getElementById("root");
 state.status = STRINGS[state.language].micStatus;
 
-function clampDb(db) {
-  return Math.max(0, Math.min(110, Math.round(db)));
+function getLanguage() {
+  const saved = localStorage.getItem("settings.language");
+  if (saved === "ko" || saved === "en") return saved;
+  return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 
-function getRange(db) {
-  return DB_RANGES.find((range) => db >= range.min && db < range.max) ?? DB_RANGES[0];
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampDb(db) {
+  return Math.max(0, Math.min(110, Math.round(db)));
 }
 
 function randomDb(min, max) {
   return Math.floor(min + Math.random() * (max - min + 1));
 }
 
-function getLanguage() {
-  const saved = localStorage.getItem("settings.language");
-  if (saved === "ko" || saved === "en") {
-    return saved;
-  }
-  return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
+function getRange(db) {
+  return DB_RANGES.find((range) => db >= range.min && db < range.max) ?? DB_RANGES[0];
 }
 
 function formatTime(ms) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
+  return `0:${String(totalSeconds).padStart(2, "0")}`;
 }
 
 function flameLevel(db) {
@@ -123,17 +164,30 @@ function getFlameAsset(db) {
   return `/public/assets/240px_level${flameLevel(db)}.png`;
 }
 
+function isRunningPhase() {
+  return state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "holdPrompt";
+}
+
+function canAcceptDb() {
+  return state.phase === "flying" || state.phase === "holdPrompt";
+}
+
 function startGame() {
-  if (state.phase !== "waitingLaunch") {
-    return;
-  }
+  if (state.phase !== "waitingLaunch") return;
+  speech.shouldListen = false;
+  stopSpeechRecognition();
   state.phase = "flying";
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
-  state.timeLeftMs = GAME_SECONDS * 1000;
+  state.timeLeftMs = ENERGY_SECONDS * 1000;
   state.lastTick = Date.now();
-  state.lastDbInputAt = Date.now();
+  state.manualModeUntil = 0;
+  state.clapCount = 0;
+  state.holdMs = 0;
+  state.holdOutMs = 0;
+  state.ufoSeed = Math.random();
+  state.status = "";
   updateUi();
 }
 
@@ -143,65 +197,49 @@ function beginClapChallenge() {
   state.clapCount = 0;
   state.clapStartedAt = Date.now();
   state.lastClapAt = 0;
+  state.manualModeUntil = 0;
+  state.timeLeftMs = Math.max(state.timeLeftMs, CLAP_MIN_ENERGY_MS);
+  state.status = "";
   updateUi();
 }
 
-function failClapChallenge() {
-  const text = STRINGS[state.language];
-  state.timeLeftMs = Math.max(0, state.timeLeftMs - 10000);
-  state.status = text.clapPenalty;
-  state.clapCount = 0;
-  state.clapStartedAt = Date.now();
-  state.lastClapAt = 0;
-  if (state.timeLeftMs <= 0) {
-    state.phase = "failed";
-  }
-  updateUi();
-}
-
-function completeClapChallenge() {
-  state.phase = "landing";
+function beginHoldChallenge() {
+  state.phase = "holdPrompt";
   state.db = 0;
-  state.progress = CLAP_START_PROGRESS;
+  state.holdMs = 0;
+  state.holdOutMs = 0;
+  state.holdStartedAt = Date.now();
+  state.manualModeUntil = 0;
+  state.timeLeftMs = Math.max(state.timeLeftMs, HOLD_MIN_ENERGY_MS);
+  state.status = "";
   updateUi();
 }
 
-function setMeasuredDb(value, isManualInput = true) {
-  if (state.phase !== "flying") {
-    return;
-  }
-
-  const now = Date.now();
-  if (!isManualInput && now < state.manualModeUntil) {
-    return;
-  }
-
-  state.db = clampDb(value);
-  state.maxDb = Math.max(state.maxDb, state.db);
-  state.lastDbInputAt = now;
-  if (isManualInput) {
-    state.manualModeUntil = now + 30000;
-  }
+function beginLanding() {
+  state.phase = "landing";
+  state.progress = 1;
+  state.landingStartedAt = Date.now();
   updateUi();
 }
 
-function registerClap(db) {
-  if (state.phase !== "clapPrompt") {
-    return;
-  }
-
-  const now = Date.now();
-  if (db < CLAP_DB_THRESHOLD || now - state.lastClapAt < CLAP_MIN_GAP_MS) {
-    return;
-  }
-
-  state.lastClapAt = now;
-  state.clapCount += 1;
-  if (state.clapCount >= 3) {
-    completeClapChallenge();
-  } else {
+function completeLanding() {
+  state.phase = "landed";
+  updateUi();
+  window.setTimeout(() => {
+    if (state.phase !== "landed") return;
+    state.phase = "replayPrompt";
+    speech.shouldListen = true;
+    startSpeechRecognition({ force: true });
     updateUi();
-  }
+  }, 1700);
+}
+
+function failGame(message) {
+  state.phase = "failed";
+  state.status = message;
+  speech.shouldListen = true;
+  startSpeechRecognition({ force: true });
+  updateUi();
 }
 
 function reset() {
@@ -209,15 +247,46 @@ function reset() {
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
-  state.timeLeftMs = GAME_SECONDS * 1000;
+  state.timeLeftMs = ENERGY_SECONDS * 1000;
   state.lastTick = Date.now();
-  state.lastDbInputAt = Date.now();
   state.manualModeUntil = 0;
   state.clapCount = 0;
   state.clapStartedAt = 0;
   state.lastClapAt = 0;
+  state.holdMs = 0;
+  state.holdOutMs = 0;
+  state.holdStartedAt = 0;
+  state.heardSpeech = "";
+  state.ufoSeed = Math.random();
   state.status = STRINGS[state.language].micStatus;
+  speech.shouldListen = true;
   updateUi();
+  startSpeechRecognition({ force: true });
+}
+
+function setMeasuredDb(value, isManualInput = true) {
+  if (!canAcceptDb()) return;
+  const now = Date.now();
+  if (!isManualInput && now < state.manualModeUntil) return;
+  state.db = clampDb(value);
+  state.maxDb = Math.max(state.maxDb, state.db);
+  if (isManualInput) state.manualModeUntil = now + 30000;
+  updateUi();
+}
+
+function registerClap(db) {
+  if (state.phase !== "clapPrompt") return;
+  state.db = clampDb(db);
+  state.maxDb = Math.max(state.maxDb, state.db);
+  const now = Date.now();
+  if (db < CLAP_DB_THRESHOLD || now - state.lastClapAt < CLAP_MIN_GAP_MS) return;
+  state.lastClapAt = now;
+  state.clapCount += 1;
+  if (state.clapCount >= 3) {
+    beginHoldChallenge();
+  } else {
+    updateUi();
+  }
 }
 
 function handleButtonAction(target) {
@@ -225,36 +294,63 @@ function handleButtonAction(target) {
     reset();
     return true;
   }
-
   if (target.dataset.action === "debug-launch") {
     startGame();
     return true;
   }
-
+  if (target.dataset.action === "enable-voice") {
+    startSpeechRecognition({ fromUserGesture: true, force: true });
+    return true;
+  }
   if (target.dataset.action === "debug-clap") {
     registerClap(90);
     return true;
   }
-
+  if (target.dataset.action === "debug-hold") {
+    if (state.phase === "holdPrompt") setMeasuredDb(55);
+    return true;
+  }
+  if (target.dataset.action === "debug-replay") {
+    if (state.phase === "replayPrompt" || state.phase === "failed") reset();
+    return true;
+  }
   if (target.dataset.min && target.dataset.max) {
     setMeasuredDb(randomDb(Number(target.dataset.min), Number(target.dataset.max)));
     return true;
   }
-
   return false;
 }
 
 function getBoardSize() {
   const maxWidth = Math.min(window.innerWidth - 32, 520);
-  const maxHeight = Math.max(window.innerHeight - 168, 560);
+  const maxHeight = Math.max(window.innerHeight - 170, 620);
   const width = Math.min(maxWidth, maxHeight * BASE_RATIO);
   return { width, height: width / BASE_RATIO };
+}
+
+function getSkyHeight() {
+  return getBoardSize().height - 162;
+}
+
+function getWorldScrollRatio(progress = state.progress) {
+  return (clamp(progress, 0, 1) * WORLD_SCROLL_PIXELS) / getSkyHeight();
+}
+
+function getCloudScrollRatio(progress = state.progress) {
+  return (clamp(progress, 0, 1) * CLOUD_SCROLL_PIXELS) / getSkyHeight();
+}
+
+function getWorldAnchoredViewportY(startProgress, startViewportY) {
+  const worldY = startViewportY - getWorldScrollRatio(startProgress) - getCloudScrollRatio(startProgress);
+  return {
+    worldY,
+    viewportY: worldY + getWorldScrollRatio() + getCloudScrollRatio(),
+  };
 }
 
 function render() {
   const text = STRINGS[state.language];
   const board = getBoardSize();
-
   root.innerHTML = `
     <main class="app">
       <header class="top">
@@ -266,23 +362,29 @@ function render() {
           <div class="hud">
             <span class="timer"></span>
           </div>
-          <div class="stage-grid">
-            ${STAGES.map((stage) => `
-              <div class="stage-row">
-                <span class="stage-letter">${stage.key}</span>
-                <span class="stage-name">${stage.name}</span>
-              </div>
-            `).join("")}
+          <div class="mini-map">
+            <img class="mini-moon" src="/public/assets/24px_moon.png" alt="" />
+            <img class="mini-rocket" src="/public/assets/24px_rocket.png" alt="" />
           </div>
-          <div class="cloud cloud-one"></div>
-          <div class="cloud cloud-two"></div>
-          <img class="moon" src="/public/assets/24px_moon.png" alt="" />
-          <img class="landing-scene" src="/public/assets/240px_landing.png" alt="" />
-          <div class="center-message"></div>
+          <div class="world">
+            <div class="launch-pad"></div>
+            ${CLOUDS.map((cloud, index) => `
+              <div class="cloud cloud-${index} ${cloud.front ? "front-cloud" : "back-cloud"}"></div>
+            `).join("")}
+            <img class="big-moon" src="/public/assets/240px_moon.png" alt="" />
+            <div class="ufo" aria-hidden="true">
+              <span class="ufo-dome"></span>
+              <span class="ufo-body"></span>
+              <span class="ufo-beam"></span>
+            </div>
+          </div>
           <div class="rocket">
-            <img class="rocket-art" src="/public/assets/24px_rocket.png" alt="" />
+            <img class="rocket-art" src="/public/assets/240px_rocket.png" alt="" />
             <img class="flame" src="/public/assets/240px_level1.png" alt="" />
           </div>
+          <img class="landing-scene" src="/public/assets/240px_landing.png" alt="" />
+          <div class="center-message"></div>
+          <div class="energy-bar"><span></span></div>
         </div>
         <button class="meter" type="button" data-action="reset">
           <strong></strong>
@@ -298,8 +400,11 @@ function render() {
         </div>
       </section>
       <footer class="bottom">
+        <button type="button" data-action="enable-voice">${text.voiceEnable}</button>
         <button type="button" data-action="debug-launch">Launch</button>
         <button type="button" data-action="debug-clap">Clap</button>
+        <button type="button" data-action="debug-hold">55dB</button>
+        <button type="button" data-action="debug-replay">Replay</button>
         <select data-action="language">
           <option value="en" ${state.language === "en" ? "selected" : ""}>English</option>
           <option value="ko" ${state.language === "ko" ? "selected" : ""}>Korean</option>
@@ -313,70 +418,215 @@ function render() {
 
 function updateUi() {
   const text = STRINGS[state.language];
-  const board = getBoardSize();
-  const skyHeight = board.height - 162;
-  const rocketBottom = 32 + state.progress * (skyHeight - 104);
-  const displayedDb = state.phase === "flying" ? Math.round(state.db) : 0;
+  const displayedDb = state.phase === "waitingLaunch" ? 0 : Math.round(state.db);
   const range = getRange(state.db);
+  const flightDistance = clamp(state.progress, 0, 1);
+  const energyRatio = clamp(state.timeLeftMs / (ENERGY_SECONDS * 1000), 0, 1);
+  const ufo = getUfoState();
 
   const timer = root.querySelector(".timer");
   if (timer) timer.textContent = `${text.timer}: ${formatTime(state.timeLeftMs)}`;
 
-  const phase = root.querySelector(".phase");
-  if (phase) phase.textContent = getPhaseLabel(text);
+  const world = root.querySelector(".world");
+  if (world) world.style.setProperty("--scroll", `${flightDistance * WORLD_SCROLL_PIXELS}px`);
 
-  const centerMessage = root.querySelector(".center-message");
-  if (centerMessage) centerMessage.textContent = getCenterMessage(text);
+  root.querySelectorAll(".cloud").forEach((cloud, index) => {
+    const config = CLOUDS[index];
+    const drift = Math.sin((flightDistance * 8 + config.delay) * Math.PI) * 28;
+    cloud.style.left = `${config.x * 100}%`;
+    cloud.style.top = `${config.y * 100}%`;
+    cloud.style.transform = `translate(${drift}px, ${flightDistance * CLOUD_SCROLL_PIXELS}px) scale(${config.scale})`;
+  });
 
   const rocket = root.querySelector(".rocket");
   if (rocket) {
-    rocket.style.bottom = `${rocketBottom}px`;
-    rocket.classList.toggle("hidden", state.phase === "landing" || state.phase === "landed");
+    rocket.classList.toggle("launching", state.phase !== "waitingLaunch");
+    rocket.classList.toggle("hidden", state.phase === "landing" || state.phase === "landed" || state.phase === "replayPrompt");
   }
 
   const flame = root.querySelector(".flame");
-  if (flame) flame.src = getFlameAsset(state.db);
+  if (flame) {
+    flame.src = getFlameAsset(state.db);
+    flame.style.transform = `translateX(-50%) scale(${0.45 + flameLevel(state.db) * 0.13})`;
+  }
 
-  const moon = root.querySelector(".moon");
-  if (moon) moon.classList.toggle("hidden", state.phase === "landing" || state.phase === "landed");
+  const miniRocket = root.querySelector(".mini-rocket");
+  if (miniRocket) {
+    miniRocket.style.bottom = `${8 + flightDistance * 78}%`;
+  }
+
+  const bigMoon = root.querySelector(".big-moon");
+  if (bigMoon) {
+    const moon = getMoonState();
+    bigMoon.classList.toggle("visible", moon.visible);
+    bigMoon.style.top = `${moon.y * 100}%`;
+    bigMoon.style.opacity = moon.visible ? moon.opacity : 0;
+  }
+
+  const ufoEl = root.querySelector(".ufo");
+  if (ufoEl) {
+    ufoEl.classList.toggle("visible", ufo.visible);
+    ufoEl.style.left = `${ufo.x * 100}%`;
+    ufoEl.style.top = `${ufo.y * 100}%`;
+    ufoEl.style.opacity = ufo.visible ? ufo.opacity : 0;
+  }
 
   const landingScene = root.querySelector(".landing-scene");
   if (landingScene) {
-    landingScene.classList.toggle("visible", state.phase === "landing" || state.phase === "landed");
+    landingScene.classList.toggle("visible", state.phase === "landing" || state.phase === "landed" || state.phase === "replayPrompt");
   }
+
+  const centerMessage = root.querySelector(".center-message");
+  if (centerMessage) {
+    centerMessage.innerHTML = getCenterMessage(text);
+  }
+
+  const energyFill = root.querySelector(".energy-bar span");
+  if (energyFill) energyFill.style.width = `${energyRatio * 100}%`;
 
   const currentDb = root.querySelector(".meter strong");
   const maxDb = root.querySelector(".meter span");
-  if (currentDb) currentDb.textContent = `${text.current}: ${displayedDb} dB`;
+  if (currentDb) currentDb.textContent = `${displayedDb} dB`;
   if (maxDb) maxDb.textContent = `${text.max}: ${state.maxDb} dB`;
 
   const footerStatus = root.querySelector(".bottom p");
-  if (footerStatus) footerStatus.textContent = [state.status, state.speechStatus].filter(Boolean).join(" ");
+  if (footerStatus) {
+    const heard = state.heardSpeech ? `${text.voiceHeard}: ${state.heardSpeech}` : "";
+    footerStatus.textContent = [state.status, state.speechStatus, heard].filter(Boolean).join(" ");
+  }
 
   root.querySelectorAll(".buttons button").forEach((button) => {
-    button.classList.toggle("active", state.phase === "flying" && button.dataset.rangeId === range.id);
+    button.classList.toggle("active", canAcceptDb() && button.dataset.rangeId === range.id);
   });
-}
-
-function getPhaseLabel(text) {
-  if (state.phase === "waitingLaunch") return text.waitingLaunch;
-  if (state.phase === "flying") return text.flying;
-  if (state.phase === "clapPrompt") return `${text.clapPrompt} (${state.clapCount}/3)`;
-  if (state.phase === "landing") return text.landing;
-  if (state.phase === "landed") return text.landed;
-  return text.failed;
 }
 
 function getCenterMessage(text) {
   if (state.phase === "waitingLaunch") return text.waitingLaunch;
-  if (state.phase === "clapPrompt") return `${text.clapPrompt}: ${state.clapCount}/3`;
+  if (state.phase === "clapPrompt") {
+    return `${text.clapPrompt}<span class="challenge-count">${Math.max(0, 3 - state.clapCount)}</span>`;
+  }
+  if (state.phase === "holdPrompt") {
+    const seconds = Math.max(0, Math.ceil((HOLD_REQUIRED_MS - state.holdMs) / 1000));
+    return `${text.holdPrompt}<span class="challenge-count">${seconds}</span>`;
+  }
   if (state.phase === "landing") return text.landing;
-  if (state.phase === "landed") return text.landed;
+  if (state.phase === "landed") return `<strong>${text.landedTitle}</strong><span>${text.landedBody}</span>`;
+  if (state.phase === "replayPrompt") return text.replayPrompt;
   if (state.phase === "failed") return text.failed;
-  return text.flying;
+  return "";
+}
+
+function getUfoState() {
+  const position = getWorldAnchoredViewportY(UFO_TRIGGER_PROGRESS, -0.08);
+  const viewportY = position.viewportY;
+  const visible = state.phase === "flying" && state.progress >= UFO_TRIGGER_PROGRESS && state.progress < 0.9;
+  const wave = Math.sin(Date.now() / 3600 + state.ufoSeed * Math.PI * 2);
+  return {
+    visible,
+    x: clamp(0.5 + wave * 0.28, 0.18, 0.82),
+    y: position.worldY,
+    viewportY,
+    opacity: 1,
+  };
+}
+
+function getMoonState() {
+  const activePhase = state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "holdPrompt";
+  const position = getWorldAnchoredViewportY(MOON_APPEAR_PROGRESS, -0.22);
+  const viewportY = position.viewportY;
+  const visible = activePhase && state.progress >= MOON_APPEAR_PROGRESS && viewportY < 1.05;
+  const fadeIn = clamp((viewportY + 0.2) / 0.12, 0, 1);
+  return {
+    visible,
+    y: position.worldY,
+    viewportY,
+    opacity: fadeIn,
+  };
+}
+
+function checkUfoCollision() {
+  const text = STRINGS[state.language];
+  const ufo = getUfoState();
+  if (!ufo.visible) return;
+  const ufoBody = root.querySelector(".ufo");
+  const rocketArt = root.querySelector(".rocket-art");
+  if (!ufoBody || !rocketArt) return;
+  const ufoRect = ufoBody.getBoundingClientRect();
+  const rocketRect = rocketArt.getBoundingClientRect();
+  const rocketHit = {
+    left: rocketRect.left + rocketRect.width * 0.2,
+    right: rocketRect.right - rocketRect.width * 0.2,
+    top: rocketRect.top + rocketRect.height * 0.04,
+    bottom: rocketRect.top + rocketRect.height * 0.82,
+  };
+  const ufoHit = {
+    left: ufoRect.left + ufoRect.width * 0.08,
+    right: ufoRect.right - ufoRect.width * 0.08,
+    top: ufoRect.top + ufoRect.height * 0.12,
+    bottom: ufoRect.bottom - ufoRect.height * 0.04,
+  };
+  const overlapsX = ufoHit.right >= rocketHit.left && ufoHit.left <= rocketHit.right;
+  const overlapsY = ufoHit.bottom >= rocketHit.top && ufoHit.top <= rocketHit.bottom;
+  if (overlapsX && overlapsY) {
+    failGame(text.ufoFailed);
+  }
+}
+
+function hasUfoClearedForClap() {
+  const ufoEl = root.querySelector(".ufo");
+  const sky = root.querySelector(".sky");
+  if (!ufoEl || !sky) return false;
+  const ufoRect = ufoEl.getBoundingClientRect();
+  const skyRect = sky.getBoundingClientRect();
+  return ufoRect.top >= skyRect.bottom;
+}
+
+function updateGame(delta) {
+  const text = STRINGS[state.language];
+  if (isRunningPhase()) {
+    state.timeLeftMs = Math.max(0, state.timeLeftMs - delta);
+    if (state.timeLeftMs <= 0) {
+      failGame(text.energyFailed);
+      return;
+    }
+  }
+
+  if (state.phase === "flying") {
+    const speed = state.db * 0.00000048;
+    state.progress = Math.min(1, state.progress + speed * delta);
+    checkUfoCollision();
+    if (state.phase !== "flying") return;
+    if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedForClap()) beginClapChallenge();
+  }
+
+  if (state.phase === "clapPrompt" && Date.now() - state.clapStartedAt > CLAP_WINDOW_MS) {
+    failGame(text.clapFailed);
+  }
+
+  if (state.phase === "holdPrompt") {
+    if (state.db >= HOLD_TARGET_MIN && state.db <= HOLD_TARGET_MAX) {
+      state.holdMs += delta;
+      state.holdOutMs = 0;
+    } else if (Date.now() - state.holdStartedAt < HOLD_START_GRACE_MS) {
+      state.holdOutMs = 0;
+    } else {
+      state.holdOutMs += delta;
+    }
+    if (state.holdOutMs > HOLD_FAIL_GRACE_MS) {
+      failGame(text.holdFailed);
+      return;
+    }
+    if (state.holdMs >= HOLD_REQUIRED_MS) beginLanding();
+  }
+
+  if (state.phase === "landing" && Date.now() - state.landingStartedAt > 1400) {
+    completeLanding();
+  }
 }
 
 root.addEventListener("pointerdown", (event) => {
+  speech.hasUserGesture = true;
+  startSpeechRecognition({ fromUserGesture: true });
   const target = event.target.closest("button");
   if (!target) return;
   if (handleButtonAction(target)) {
@@ -388,10 +638,7 @@ root.addEventListener("pointerdown", (event) => {
 root.addEventListener("click", (event) => {
   const target = event.target.closest("button");
   if (!target) return;
-  if (
-    target.dataset.action ||
-    (target.dataset.min && target.dataset.max)
-  ) {
+  if (target.dataset.action || (target.dataset.min && target.dataset.max)) {
     if (Date.now() - state.lastButtonActionAt > 250) {
       handleButtonAction(target);
       state.lastButtonActionAt = Date.now();
@@ -414,79 +661,122 @@ window.setInterval(() => {
   const now = Date.now();
   const delta = now - state.lastTick;
   state.lastTick = now;
-
-  if (state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "landing") {
-    state.timeLeftMs = Math.max(0, state.timeLeftMs - delta);
-    if (state.timeLeftMs <= 0) {
-      state.phase = "failed";
-      state.db = 0;
-      updateUi();
-      return;
-    }
-  }
-
-  if (state.phase === "flying") {
-    const speed = 0.000012 + state.db * 0.0000005;
-    state.progress = Math.min(CLAP_START_PROGRESS, state.progress + speed * delta);
-    if (state.progress >= CLAP_START_PROGRESS) {
-      beginClapChallenge();
-      return;
-    }
-  }
-
-  if (state.phase === "clapPrompt" && Date.now() - state.clapStartedAt > CLAP_WINDOW_MS) {
-    failClapChallenge();
-    return;
-  }
-
-  if (state.phase === "landing") {
-    state.progress = Math.min(1, state.progress + delta * 0.00006);
-    if (state.progress >= 1) {
-      state.phase = "landed";
-      state.db = 0;
-    }
-  }
-
+  updateGame(delta);
   updateUi();
 }, 50);
 
-function startSpeechRecognition() {
+function normalizeSpeechText(value) {
+  return value.trim().toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ");
+}
+
+function transcriptMatchesAny(transcript, words) {
+  const normalized = normalizeSpeechText(transcript);
+  return words.some((word) => normalized.includes(word));
+}
+
+function readSpeechTranscript(event) {
+  const transcripts = [];
+  for (let index = event.resultIndex; index < event.results.length; index += 1) {
+    const result = event.results[index];
+    for (let alternativeIndex = 0; alternativeIndex < result.length; alternativeIndex += 1) {
+      const transcript = result[alternativeIndex]?.transcript;
+      if (transcript) transcripts.push(transcript);
+    }
+  }
+  return transcripts.join(" ");
+}
+
+function scheduleSpeechRestart(delay = 700) {
+  if (!speech.shouldListen || (state.phase !== "waitingLaunch" && state.phase !== "replayPrompt" && state.phase !== "failed")) {
+    return;
+  }
+  window.clearTimeout(speech.restartTimer);
+  speech.restartTimer = window.setTimeout(() => {
+    startSpeechRecognition({ force: true });
+  }, delay);
+}
+
+function stopSpeechRecognition() {
+  speech.shouldListen = false;
+  window.clearTimeout(speech.restartTimer);
+  if (!speech.recognition || !speech.isListening) return;
+  try {
+    speech.recognition.stop();
+  } catch {
+    // Some browsers throw if recognition is already stopping.
+  }
+}
+
+function createSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 5;
+  recognition.lang = "en-US";
+
+  recognition.onresult = (event) => {
+    const transcript = readSpeechTranscript(event);
+    if (!transcript) return;
+    state.heardSpeech = normalizeSpeechText(transcript).slice(0, 36);
+    if (state.phase === "waitingLaunch" && transcriptMatchesAny(transcript, LAUNCH_WORDS)) {
+      startGame();
+    } else if ((state.phase === "replayPrompt" || state.phase === "failed") && transcriptMatchesAny(transcript, REPLAY_WORDS)) {
+      reset();
+    } else {
+      updateUi();
+    }
+  };
+
+  recognition.onerror = (event) => {
+    speech.isListening = false;
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      state.speechStatus = "Speech recognition permission was denied.";
+      speech.shouldListen = false;
+    } else if (event.error === "no-speech") {
+      state.speechStatus = STRINGS[state.language].voiceReady;
+      scheduleSpeechRestart(250);
+    } else if (event.error === "audio-capture") {
+      state.speechStatus = "Speech recognition cannot access the microphone.";
+      scheduleSpeechRestart(1000);
+    } else if (event.error !== "aborted") {
+      state.speechStatus = `Speech recognition error: ${event.error}`;
+      scheduleSpeechRestart(1000);
+    }
+    updateUi();
+  };
+
+  recognition.onend = () => {
+    speech.isListening = false;
+    scheduleSpeechRestart(speech.hasUserGesture ? 350 : 1200);
+  };
+  return recognition;
+}
+
+function startSpeechRecognition(options = {}) {
   const text = STRINGS[state.language];
-  if (!SpeechRecognition) {
+  if (options.fromUserGesture) speech.hasUserGesture = true;
+  if (!speech.shouldListen && !options.force) return;
+  if (state.phase !== "waitingLaunch" && state.phase !== "replayPrompt" && state.phase !== "failed") return;
+  speech.shouldListen = true;
+  if (!speech.recognition) speech.recognition = createSpeechRecognition();
+  if (!speech.recognition) {
     state.speechStatus = text.speechUnsupported;
     updateUi();
     return;
   }
-
-  const recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.lang = "en-US";
-
-  recognition.onresult = (event) => {
-    const latest = event.results[event.results.length - 1]?.[0]?.transcript ?? "";
-    if (latest.trim().toLowerCase().includes("launch")) {
-      startGame();
-    }
-  };
-  recognition.onerror = () => {
-    state.speechStatus = "Speech recognition error.";
-    updateUi();
-  };
-  recognition.onend = () => {
-    try {
-      recognition.start();
-    } catch {
-      state.speechStatus = "Speech recognition stopped.";
-      updateUi();
-    }
-  };
-
+  if (speech.isListening) return;
   try {
-    recognition.start();
-  } catch {
-    state.speechStatus = "Speech recognition could not start.";
+    speech.recognition.start();
+    speech.isListening = true;
+    state.speechStatus = text.voiceReady;
+  } catch (error) {
+    speech.isListening = false;
+    state.speechStatus = error instanceof Error ? error.message : "Speech recognition could not start.";
+    scheduleSpeechRestart(speech.hasUserGesture ? 700 : 1500);
+  } finally {
+    updateUi();
   }
 }
 
@@ -496,7 +786,6 @@ async function startMeter() {
     render();
     return;
   }
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const audioContext = new AudioContext();
@@ -516,6 +805,8 @@ async function startMeter() {
       const rms = Math.sqrt(total / samples.length);
       const db = Math.max(0, Math.min(110, Math.round(20 * Math.log10(rms + 0.00001) + 96)));
       if (state.phase === "clapPrompt") {
+        state.db = clampDb(db);
+        state.maxDb = Math.max(state.maxDb, state.db);
         registerClap(db);
       } else {
         setMeasuredDb(db, false);
