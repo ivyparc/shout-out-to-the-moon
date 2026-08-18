@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Component, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AppState, SafeAreaView, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 
@@ -10,17 +10,57 @@ import { strings } from "./src/i18n/strings";
 import { loadSavedLanguage, saveLanguage } from "./src/storage/languagePreference";
 import { requestTrackingPermission } from "./src/services/trackingPermission";
 
-export default function App() {
+type ErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type ErrorBoundaryState = {
+  error: Error | null;
+};
+
+class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = {
+    error: null,
+  };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.errorScreen}>
+            <AppText style={styles.errorTitle}>App Error</AppText>
+            <AppText style={styles.errorMessage}>{this.state.error.message}</AppText>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function RootApp() {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [trackingStatus, setTrackingStatus] = useState<string>("not-requested");
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     async function boot() {
-      const savedLanguage = await loadSavedLanguage();
-      if (isMounted) {
-        setLanguage(savedLanguage ?? getInitialLanguage());
+      try {
+        const savedLanguage = await loadSavedLanguage();
+        if (isMounted) {
+          setLanguage(savedLanguage ?? getInitialLanguage());
+        }
+      } catch (error) {
+        if (isMounted) {
+          setBootError(error instanceof Error ? error.message : "Failed to initialize app.");
+        }
       }
     }
 
@@ -35,8 +75,12 @@ export default function App() {
       if (AppState.currentState !== "active") {
         return;
       }
-      const status = await requestTrackingPermission();
-      setTrackingStatus(status);
+      try {
+        const status = await requestTrackingPermission();
+        setTrackingStatus(status);
+      } catch (error) {
+        setTrackingStatus(error instanceof Error ? `error: ${error.message}` : "error");
+      }
     }
 
     requestWhenActive();
@@ -70,6 +114,11 @@ export default function App() {
           <AppText style={styles.subtitle}>{copy.subtitle}</AppText>
         </View>
         <GameViewport copy={copy} />
+        {bootError ? (
+          <View style={styles.inlineError}>
+            <AppText style={styles.inlineErrorText}>{bootError}</AppText>
+          </View>
+        ) : null}
         <View style={styles.footer}>
           <LanguageSettings
             language={language}
@@ -80,6 +129,14 @@ export default function App() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <RootApp />
+    </AppErrorBoundary>
   );
 }
 
@@ -119,6 +176,38 @@ const styles = StyleSheet.create({
   status: {
     color: "#6d7788",
     fontSize: 12,
+    textAlign: "center",
+  },
+  inlineError: {
+    width: "100%",
+    maxWidth: 760,
+    borderRadius: 6,
+    backgroundColor: "#fff2f0",
+    padding: 8,
+  },
+  inlineErrorText: {
+    color: "#b42318",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  errorScreen: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "#f5f7fb",
+  },
+  errorTitle: {
+    color: "#b42318",
+    fontSize: 24,
+    fontWeight: "900",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  errorMessage: {
+    color: "#2e3747",
+    fontSize: 14,
+    fontWeight: "700",
     textAlign: "center",
   },
 });

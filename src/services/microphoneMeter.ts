@@ -10,6 +10,7 @@ type WebWindow = Window &
 
 export async function startMicrophoneMeter(onDb: DbListener): Promise<StopMeter> {
   if (Platform.OS !== "web") {
+    onDb(0);
     throw new Error("Native microphone dB measurement is not implemented in this POC.");
   }
 

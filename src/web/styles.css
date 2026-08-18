@@ -111,7 +111,7 @@ select {
 .mini-rocket {
   position: absolute;
   right: 6px;
-  bottom: 8%;
+  bottom: 0;
   width: 24px;
   height: 24px;
 }
@@ -139,31 +139,16 @@ select {
   z-index: 3;
   width: 128px;
   height: 48px;
+  background-image: url("/public/assets/clouds.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
   pointer-events: none;
 }
 
 .cloud::before,
 .cloud::after {
-  content: "";
-  position: absolute;
-  border: 3px solid #111820;
-  background: #c9f3ff;
-}
-
-.cloud::before {
-  left: 0;
-  right: 18px;
-  bottom: 0;
-  height: 30px;
-  border-radius: 24px;
-}
-
-.cloud::after {
-  left: 34px;
-  top: 0;
-  width: 72px;
-  height: 42px;
-  border-radius: 42px;
+  content: none;
 }
 
 .back-cloud {
@@ -198,14 +183,14 @@ select {
   bottom: calc(var(--launch-pad-height) - var(--rocket-art-bottom-offset) - var(--rocket-visible-gap-fix));
   width: 136px;
   height: 184px;
-  transform: translateX(-50%) scale(0.76);
+  transform: translateX(-50%) scale(0.64);
   transform-origin: bottom center;
   z-index: 8;
   transition: transform 120ms ease;
 }
 
 .rocket.launching {
-  transform: translateX(-50%) scale(0.76);
+  transform: translateX(-50%) scale(0.64);
 }
 
 .rocket:not(.launching) .flame {
@@ -225,19 +210,57 @@ select {
 .flame {
   position: absolute;
   left: 50%;
-  bottom: 42px;
-  width: 82px;
-  height: 82px;
-  object-fit: contain;
-  transform: translateX(-50%) scale(0.64);
+  bottom: -20px;
+  width: 104px;
+  height: 104px;
+  transform: translateX(-50%);
   transform-origin: top center;
-  transition: transform 120ms ease;
+  transition: width 120ms ease, height 120ms ease;
+}
+
+.flame[data-level="1"] {
+  width: 48px;
+  height: 48px;
+}
+
+.flame[data-level="2"] {
+  width: 60px;
+  height: 60px;
+}
+
+.flame[data-level="3"] {
+  width: 72px;
+  height: 72px;
+}
+
+.flame[data-level="4"] {
+  width: 88px;
+  height: 88px;
+}
+
+.flame[data-level="5"] {
+  width: 104px;
+  height: 104px;
+}
+
+.flame-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  opacity: 0;
+}
+
+.flame-image.active {
+  opacity: 1;
 }
 
 .ufo {
   position: absolute;
-  width: 42px;
-  height: 28px;
+  width: 88px;
+  height: 60px;
   z-index: 11;
   opacity: 0;
   transform: translate(-50%, -50%);
@@ -248,55 +271,12 @@ select {
   opacity: 1;
 }
 
-.ufo::before,
-.ufo::after {
-  content: "";
-  position: absolute;
-  top: 14px;
-  width: 24px;
-  height: 2px;
-  background: #697078;
-}
-
-.ufo::before {
-  right: 34px;
-}
-
-.ufo::after {
-  left: 34px;
-}
-
-.ufo-dome {
-  position: absolute;
-  left: 14px;
-  top: 1px;
-  width: 15px;
-  height: 11px;
-  border: 2px solid #142236;
-  border-bottom: 0;
-  border-radius: 18px 18px 0 0;
-  background: #75e8ef;
-}
-
-.ufo-body {
-  position: absolute;
-  left: 5px;
-  top: 10px;
-  width: 32px;
-  height: 11px;
-  border: 2px solid #142236;
-  border-radius: 50%;
-  background: #8ab8ff;
-}
-
-.ufo-beam {
-  position: absolute;
-  left: 19px;
-  bottom: 0;
-  width: 4px;
-  height: 9px;
-  border-radius: 3px;
-  background: #111820;
+.ufo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .landing-scene {
@@ -304,24 +284,48 @@ select {
   left: 50%;
   top: 50%;
   width: 178px;
-  height: 178px;
-  display: none;
-  object-fit: contain;
-  transform: translate(-50%, -18%);
+  height: 214px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(0.96);
+  transition: opacity 180ms ease, transform 180ms ease;
   z-index: 9;
+  pointer-events: none;
 }
 
 .landing-scene.visible {
-  display: block;
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.landing-moon {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 154px;
+  height: 154px;
+  object-fit: contain;
+  transform: translateX(-50%);
+}
+
+.landing-rocket {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  width: 66px;
+  height: 66px;
+  object-fit: contain;
+  transform: translateX(-50%);
 }
 
 .center-message {
   position: absolute;
-  top: 30%;
+  top: 28%;
   left: 50%;
   width: 86%;
   color: #5d626a;
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 800;
   line-height: 1.32;
   text-align: center;
@@ -330,21 +334,26 @@ select {
   pointer-events: none;
 }
 
+.center-message.phase-landed,
+.center-message.phase-replayPrompt {
+  top: 74%;
+}
+
 .center-message strong,
 .center-message span {
   display: block;
 }
 
 .center-message span {
-  margin-top: 14px;
-  font-size: 22px;
+  margin-top: 10px;
+  font-size: 18px;
 }
 
 .challenge-count {
   display: block;
   margin-top: 8px;
   color: #082fff;
-  font-size: 34px;
+  font-size: 36px;
 }
 
 .energy-bar {

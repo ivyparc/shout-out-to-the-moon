@@ -5,12 +5,14 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "jsEngine": "jsc",
     "scheme": "shoutmoon",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "2",
       "bundleIdentifier": "com.ivyparc.shoutouttothemoon",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "The microphone is used to measure your shout volume and move the rocket.",

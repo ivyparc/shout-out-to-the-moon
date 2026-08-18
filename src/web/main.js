@@ -1,7 +1,7 @@
 const BASE_WIDTH = 1179;
 const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
-const ENERGY_SECONDS = 30;
+const ENERGY_SECONDS = 45;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
 const MOON_TRIGGER_PROGRESS = 0.62;
@@ -30,10 +30,16 @@ const DB_RANGES = [
 ];
 
 const CLOUDS = [
-  { x: 0.12, y: 0.82, scale: 0.75, front: true, delay: 0 },
-  { x: 0.62, y: 0.7, scale: 0.55, front: false, delay: 0.25 },
-  { x: 0.2, y: 0.48, scale: 0.6, front: true, delay: 0.5 },
-  { x: 0.68, y: 0.3, scale: 0.5, front: false, delay: 0.75 },
+  { x: 0.14, y: 0.1, scale: 0.48, front: false, delay: 0 },
+  { x: 0.7, y: 0.18, scale: 0.54, front: true, delay: 0.15 },
+  { x: 0.24, y: 0.3, scale: 0.58, front: true, delay: 0.3 },
+  { x: 0.72, y: 0.42, scale: 0.5, front: false, delay: 0.45 },
+  { x: 0.16, y: 0.54, scale: 0.64, front: true, delay: 0.6 },
+  { x: 0.62, y: 0.62, scale: 0.52, front: false, delay: 0.75 },
+  { x: 0.34, y: 0.76, scale: 0.44, front: false, delay: 0.9 },
+  { x: 0.78, y: 0.86, scale: 0.58, front: true, delay: 1.05 },
+  { x: 0.46, y: 1.02, scale: 0.5, front: false, delay: 1.2 },
+  { x: 0.12, y: 1.18, scale: 0.62, front: true, delay: 1.35 },
 ];
 
 const STRINGS = {
@@ -46,8 +52,14 @@ const STRINGS = {
     timer: "Energy",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
-    clapPrompt: "박수 3번 쳐 주세요!",
-    holdPrompt: "50~60dB를 5초간 유지해 주세요.",
+    avoidUfo: "UFO를 피하세요!",
+    avoidUfoHint: "소리를 크게/작게 내서 속도를 바꾸세요",
+    getReadyHold: "곧 50~60dB 유지!",
+    getReadyClap: "다음은 박수 3번!",
+    clapPrompt: "박수 3번!",
+    clapHint: "8초 안에 박수 3번 또는 아래 Clap 버튼",
+    holdPrompt: "50~60dB 유지!",
+    holdHint: "5초 동안 50~60dB를 유지하세요",
     landing: "Landing...",
     landedTitle: "Congratulations!",
     landedBody: "You've landed successfully.",
@@ -58,9 +70,9 @@ const STRINGS = {
     voiceEnable: "Voice",
     voiceReady: "Launch 음성 인식 대기 중",
     voiceHeard: "인식",
-    clapFailed: "박수 3번을 완료하지 못했습니다.",
-    holdFailed: "50~60dB 유지에 실패했습니다.",
-    ufoFailed: "UFO와 충돌했습니다.",
+    clapFailed: "박수 3번을 8초 안에 완료하지 못했습니다.",
+    holdFailed: "50~60dB를 5초간 유지하지 못했습니다.",
+    ufoFailed: "UFO에 닿았습니다. UFO가 보이는 동안은 dB로 속도를 조절해 피하세요.",
     energyFailed: "Energy가 0이 되었습니다.",
   },
   en: {
@@ -72,8 +84,14 @@ const STRINGS = {
     timer: "Energy",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
+    avoidUfo: "Avoid the UFO!",
+    avoidUfoHint: "Change your dB to speed up or slow down",
+    getReadyHold: "Get ready: hold 50-60dB!",
+    getReadyClap: "Next: clap 3 times!",
     clapPrompt: "Clap 3 times!",
-    holdPrompt: "Hold 50-60dB for 5 seconds.",
+    clapHint: "Clap 3 times within 8 seconds or tap the Clap button below",
+    holdPrompt: "Hold 50-60dB!",
+    holdHint: "Keep 50-60dB steady for 5 seconds",
     landing: "Landing...",
     landedTitle: "Congratulations!",
     landedBody: "You've landed successfully.",
@@ -84,9 +102,9 @@ const STRINGS = {
     voiceEnable: "Voice",
     voiceReady: "Listening for Launch",
     voiceHeard: "Heard",
-    clapFailed: "Clap challenge failed.",
-    holdFailed: "50-60dB hold failed.",
-    ufoFailed: "Hit by UFO.",
+    clapFailed: "You did not clap 3 times within 8 seconds.",
+    holdFailed: "You did not hold 50-60dB for 5 seconds.",
+    ufoFailed: "You touched the UFO. Change dB to dodge it while it is on screen.",
     energyFailed: "Energy reached zero.",
   },
 };
@@ -111,7 +129,11 @@ const state = {
   speechStatus: "",
   heardSpeech: "",
   ufoSeed: Math.random(),
+  ufoStartedAt: 0,
+  ufoExitStartedAt: 0,
   landingStartedAt: 0,
+  landingSceneX: 50,
+  landingSceneY: 50,
 };
 
 const speech = {
@@ -187,6 +209,8 @@ function startGame() {
   state.holdMs = 0;
   state.holdOutMs = 0;
   state.ufoSeed = Math.random();
+  state.ufoStartedAt = Date.now();
+  state.ufoExitStartedAt = 0;
   state.status = "";
   updateUi();
 }
@@ -209,6 +233,7 @@ function beginHoldChallenge() {
   state.holdMs = 0;
   state.holdOutMs = 0;
   state.holdStartedAt = Date.now();
+  state.ufoExitStartedAt = Date.now();
   state.manualModeUntil = 0;
   state.timeLeftMs = Math.max(state.timeLeftMs, HOLD_MIN_ENERGY_MS);
   state.status = "";
@@ -216,6 +241,14 @@ function beginHoldChallenge() {
 }
 
 function beginLanding() {
+  const sky = root.querySelector(".sky");
+  const moon = root.querySelector(".big-moon");
+  if (sky && moon) {
+    const skyRect = sky.getBoundingClientRect();
+    const moonRect = moon.getBoundingClientRect();
+    state.landingSceneX = ((moonRect.left + moonRect.width / 2 - skyRect.left) / skyRect.width) * 100;
+    state.landingSceneY = ((moonRect.top + moonRect.height / 2 - skyRect.top) / skyRect.height) * 100;
+  }
   state.phase = "landing";
   state.progress = 1;
   state.landingStartedAt = Date.now();
@@ -258,19 +291,20 @@ function reset() {
   state.holdStartedAt = 0;
   state.heardSpeech = "";
   state.ufoSeed = Math.random();
+  state.ufoStartedAt = 0;
+  state.ufoExitStartedAt = 0;
+  state.landingSceneX = 50;
+  state.landingSceneY = 50;
   state.status = STRINGS[state.language].micStatus;
   speech.shouldListen = true;
   updateUi();
   startSpeechRecognition({ force: true });
 }
 
-function setMeasuredDb(value, isManualInput = true) {
+function setMeasuredDb(value) {
   if (!canAcceptDb()) return;
-  const now = Date.now();
-  if (!isManualInput && now < state.manualModeUntil) return;
   state.db = clampDb(value);
   state.maxDb = Math.max(state.maxDb, state.db);
-  if (isManualInput) state.manualModeUntil = now + 30000;
   updateUi();
 }
 
@@ -283,7 +317,7 @@ function registerClap(db) {
   state.lastClapAt = now;
   state.clapCount += 1;
   if (state.clapCount >= 3) {
-    beginHoldChallenge();
+    beginLanding();
   } else {
     updateUi();
   }
@@ -373,16 +407,21 @@ function render() {
             `).join("")}
             <img class="big-moon" src="/public/assets/240px_moon.png" alt="" />
             <div class="ufo" aria-hidden="true">
-              <span class="ufo-dome"></span>
-              <span class="ufo-body"></span>
-              <span class="ufo-beam"></span>
+              <img src="/public/assets/ufo_128.png" alt="" />
             </div>
           </div>
           <div class="rocket">
             <img class="rocket-art" src="/public/assets/240px_rocket.png" alt="" />
-            <img class="flame" src="/public/assets/240px_level1.png" alt="" />
+            <div class="flame" aria-hidden="true">
+              ${[1, 2, 3, 4, 5].map((level) => `
+                <img class="flame-image flame-level-${level}" src="/public/assets/240px_level${level}.png" alt="" />
+              `).join("")}
+            </div>
           </div>
-          <img class="landing-scene" src="/public/assets/240px_landing.png" alt="" />
+          <div class="landing-scene" aria-hidden="true">
+            <img class="landing-moon" src="/public/assets/240px_moon.png" alt="" />
+            <img class="landing-rocket" src="/public/assets/240px_rocket.png" alt="" />
+          </div>
           <div class="center-message"></div>
           <div class="energy-bar"><span></span></div>
         </div>
@@ -446,13 +485,16 @@ function updateUi() {
 
   const flame = root.querySelector(".flame");
   if (flame) {
-    flame.src = getFlameAsset(state.db);
-    flame.style.transform = `translateX(-50%) scale(${0.45 + flameLevel(state.db) * 0.13})`;
+    const level = flameLevel(state.db);
+    flame.dataset.level = String(level);
+    root.querySelectorAll(".flame-image").forEach((image) => {
+      image.classList.toggle("active", image.classList.contains(`flame-level-${level}`));
+    });
   }
 
   const miniRocket = root.querySelector(".mini-rocket");
   if (miniRocket) {
-    miniRocket.style.bottom = `${8 + flightDistance * 78}%`;
+    miniRocket.style.bottom = `calc(${flightDistance * 100}% - ${flightDistance * 24}px)`;
   }
 
   const bigMoon = root.querySelector(".big-moon");
@@ -474,10 +516,13 @@ function updateUi() {
   const landingScene = root.querySelector(".landing-scene");
   if (landingScene) {
     landingScene.classList.toggle("visible", state.phase === "landing" || state.phase === "landed" || state.phase === "replayPrompt");
+    landingScene.style.left = `${state.landingSceneX}%`;
+    landingScene.style.top = `${state.landingSceneY}%`;
   }
 
   const centerMessage = root.querySelector(".center-message");
   if (centerMessage) {
+    centerMessage.className = `center-message phase-${state.phase}`;
     centerMessage.innerHTML = getCenterMessage(text);
   }
 
@@ -502,29 +547,51 @@ function updateUi() {
 
 function getCenterMessage(text) {
   if (state.phase === "waitingLaunch") return text.waitingLaunch;
+  if (state.phase === "flying") {
+    if (state.progress >= MOON_TRIGGER_PROGRESS * 0.72 && hasUfoClearedRocketForChallenge()) {
+      return `<strong>${text.getReadyHold}</strong><span>${text.holdHint}</span>`;
+    }
+    if (state.progress >= UFO_TRIGGER_PROGRESS) {
+      return `<strong>${text.avoidUfo}</strong><span>${text.avoidUfoHint}</span>`;
+    }
+    return text.flying;
+  }
   if (state.phase === "clapPrompt") {
-    return `${text.clapPrompt}<span class="challenge-count">${Math.max(0, 3 - state.clapCount)}</span>`;
+    const clapsLeft = Math.max(0, 3 - state.clapCount);
+    const secondsLeft = Math.max(0, Math.ceil((CLAP_WINDOW_MS - (Date.now() - state.clapStartedAt)) / 1000));
+    return `<strong>${text.clapPrompt}</strong><span>${text.clapHint}</span><span class="challenge-count">${clapsLeft} / ${secondsLeft}s</span>`;
   }
   if (state.phase === "holdPrompt") {
     const seconds = Math.max(0, Math.ceil((HOLD_REQUIRED_MS - state.holdMs) / 1000));
-    return `${text.holdPrompt}<span class="challenge-count">${seconds}</span>`;
+    return `<strong>${text.holdPrompt}</strong><span>${text.holdHint}</span><span class="challenge-count">${seconds}s</span>`;
   }
   if (state.phase === "landing") return text.landing;
   if (state.phase === "landed") return `<strong>${text.landedTitle}</strong><span>${text.landedBody}</span>`;
   if (state.phase === "replayPrompt") return text.replayPrompt;
-  if (state.phase === "failed") return text.failed;
+  if (state.phase === "failed") {
+    return `<strong>${text.failed}</strong>${state.status ? `<span>${state.status}</span>` : ""}<span>${text.replayPrompt}</span>`;
+  }
   return "";
 }
 
 function getUfoState() {
   const position = getWorldAnchoredViewportY(UFO_TRIGGER_PROGRESS, -0.08);
-  const viewportY = position.viewportY;
-  const visible = state.phase === "flying" && state.progress >= UFO_TRIGGER_PROGRESS && state.progress < 0.9;
-  const wave = Math.sin(Date.now() / 3600 + state.ufoSeed * Math.PI * 2);
+  const exitingMs = state.ufoExitStartedAt > 0 ? Date.now() - state.ufoExitStartedAt : 0;
+  const exitOffset = state.ufoExitStartedAt > 0 ? Math.min(1.25, exitingMs / 2800) : 0;
+  const viewportY = position.viewportY + exitOffset;
+  const activePhase =
+    state.phase === "flying" ||
+    state.phase === "holdPrompt" ||
+    state.phase === "clapPrompt" ||
+    state.phase === "landing" ||
+    state.phase === "landed";
+  const visible = activePhase && state.progress >= UFO_TRIGGER_PROGRESS && viewportY < 1.32;
+  const elapsed = state.ufoStartedAt > 0 ? Date.now() - state.ufoStartedAt : 0;
+  const wave = Math.cos(elapsed / 5200);
   return {
     visible,
     x: clamp(0.5 + wave * 0.28, 0.18, 0.82),
-    y: position.worldY,
+    y: position.worldY + exitOffset,
     viewportY,
     opacity: 1,
   };
@@ -554,16 +621,16 @@ function checkUfoCollision() {
   const ufoRect = ufoBody.getBoundingClientRect();
   const rocketRect = rocketArt.getBoundingClientRect();
   const rocketHit = {
-    left: rocketRect.left + rocketRect.width * 0.2,
-    right: rocketRect.right - rocketRect.width * 0.2,
-    top: rocketRect.top + rocketRect.height * 0.04,
-    bottom: rocketRect.top + rocketRect.height * 0.82,
+    left: rocketRect.left + rocketRect.width * 0.32,
+    right: rocketRect.right - rocketRect.width * 0.32,
+    top: rocketRect.top + rocketRect.height * 0.18,
+    bottom: rocketRect.top + rocketRect.height * 0.84,
   };
   const ufoHit = {
-    left: ufoRect.left + ufoRect.width * 0.08,
-    right: ufoRect.right - ufoRect.width * 0.08,
-    top: ufoRect.top + ufoRect.height * 0.12,
-    bottom: ufoRect.bottom - ufoRect.height * 0.04,
+    left: ufoRect.left + ufoRect.width * 0.24,
+    right: ufoRect.right - ufoRect.width * 0.24,
+    top: ufoRect.top + ufoRect.height * 0.34,
+    bottom: ufoRect.bottom - ufoRect.height * 0.28,
   };
   const overlapsX = ufoHit.right >= rocketHit.left && ufoHit.left <= rocketHit.right;
   const overlapsY = ufoHit.bottom >= rocketHit.top && ufoHit.top <= rocketHit.bottom;
@@ -572,13 +639,13 @@ function checkUfoCollision() {
   }
 }
 
-function hasUfoClearedForClap() {
+function hasUfoClearedRocketForChallenge() {
   const ufoEl = root.querySelector(".ufo");
-  const sky = root.querySelector(".sky");
-  if (!ufoEl || !sky) return false;
+  const rocketArt = root.querySelector(".rocket-art");
+  if (!ufoEl || !rocketArt) return state.progress >= UFO_END_PROGRESS;
   const ufoRect = ufoEl.getBoundingClientRect();
-  const skyRect = sky.getBoundingClientRect();
-  return ufoRect.top >= skyRect.bottom;
+  const rocketRect = rocketArt.getBoundingClientRect();
+  return ufoRect.top >= rocketRect.bottom + 18;
 }
 
 function updateGame(delta) {
@@ -596,7 +663,7 @@ function updateGame(delta) {
     state.progress = Math.min(1, state.progress + speed * delta);
     checkUfoCollision();
     if (state.phase !== "flying") return;
-    if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedForClap()) beginClapChallenge();
+    if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedRocketForChallenge()) beginHoldChallenge();
   }
 
   if (state.phase === "clapPrompt" && Date.now() - state.clapStartedAt > CLAP_WINDOW_MS) {
@@ -616,7 +683,7 @@ function updateGame(delta) {
       failGame(text.holdFailed);
       return;
     }
-    if (state.holdMs >= HOLD_REQUIRED_MS) beginLanding();
+    if (state.holdMs >= HOLD_REQUIRED_MS) beginClapChallenge();
   }
 
   if (state.phase === "landing" && Date.now() - state.landingStartedAt > 1400) {
