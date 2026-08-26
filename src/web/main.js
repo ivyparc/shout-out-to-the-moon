@@ -147,8 +147,28 @@ const speech = {
 const root = document.getElementById("root");
 state.status = STRINGS[state.language].micStatus;
 
+function asset(name) {
+  return window.SHOUT_MOON_ASSETS?.[name] ?? `public/assets/${name}`;
+}
+
+function readStoredValue(key) {
+  try {
+    return window.localStorage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredValue(key, value) {
+  try {
+    window.localStorage?.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in embedded WebViews. The game should keep running.
+  }
+}
+
 function getLanguage() {
-  const saved = localStorage.getItem("settings.language");
+  const saved = readStoredValue("settings.language");
   if (saved === "ko" || saved === "en") return saved;
   return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
 }
@@ -183,7 +203,7 @@ function flameLevel(db) {
 }
 
 function getFlameAsset(db) {
-  return `/public/assets/240px_level${flameLevel(db)}.png`;
+  return asset(`240px_level${flameLevel(db)}.png`);
 }
 
 function isRunningPhase() {
@@ -262,7 +282,7 @@ function completeLanding() {
     if (state.phase !== "landed") return;
     state.phase = "replayPrompt";
     speech.shouldListen = true;
-    startSpeechRecognition({ force: true });
+    startVoiceInput({ force: true });
     updateUi();
   }, 1700);
 }
@@ -271,7 +291,7 @@ function failGame(message) {
   state.phase = "failed";
   state.status = message;
   speech.shouldListen = true;
-  startSpeechRecognition({ force: true });
+  startVoiceInput({ force: true });
   updateUi();
 }
 
@@ -298,7 +318,7 @@ function reset() {
   state.status = STRINGS[state.language].micStatus;
   speech.shouldListen = true;
   updateUi();
-  startSpeechRecognition({ force: true });
+  startVoiceInput({ force: true });
 }
 
 function setMeasuredDb(value) {
@@ -333,7 +353,7 @@ function handleButtonAction(target) {
     return true;
   }
   if (target.dataset.action === "enable-voice") {
-    startSpeechRecognition({ fromUserGesture: true, force: true });
+    startVoiceInput({ fromUserGesture: true, force: true });
     return true;
   }
   if (target.dataset.action === "debug-clap") {
@@ -385,6 +405,7 @@ function getWorldAnchoredViewportY(startProgress, startViewportY) {
 function render() {
   const text = STRINGS[state.language];
   const board = getBoardSize();
+  root.style.setProperty("--cloud-image", `url("${asset("clouds.png")}")`);
   root.innerHTML = `
     <main class="app">
       <header class="top">
@@ -397,30 +418,30 @@ function render() {
             <span class="timer"></span>
           </div>
           <div class="mini-map">
-            <img class="mini-moon" src="/public/assets/24px_moon.png" alt="" />
-            <img class="mini-rocket" src="/public/assets/24px_rocket.png" alt="" />
+            <img class="mini-moon" src="${asset("24px_moon.png")}" alt="" />
+            <img class="mini-rocket" src="${asset("24px_rocket.png")}" alt="" />
           </div>
           <div class="world">
             <div class="launch-pad"></div>
             ${CLOUDS.map((cloud, index) => `
               <div class="cloud cloud-${index} ${cloud.front ? "front-cloud" : "back-cloud"}"></div>
             `).join("")}
-            <img class="big-moon" src="/public/assets/240px_moon.png" alt="" />
+            <img class="big-moon" src="${asset("240px_moon.png")}" alt="" />
             <div class="ufo" aria-hidden="true">
-              <img src="/public/assets/ufo_128.png" alt="" />
+              <img src="${asset("ufo_128.png")}" alt="" />
             </div>
           </div>
           <div class="rocket">
-            <img class="rocket-art" src="/public/assets/240px_rocket.png" alt="" />
+            <img class="rocket-art" src="${asset("240px_rocket.png")}" alt="" />
             <div class="flame" aria-hidden="true">
               ${[1, 2, 3, 4, 5].map((level) => `
-                <img class="flame-image flame-level-${level}" src="/public/assets/240px_level${level}.png" alt="" />
+                <img class="flame-image flame-level-${level}" src="${asset(`240px_level${level}.png`)}" alt="" />
               `).join("")}
             </div>
           </div>
           <div class="landing-scene" aria-hidden="true">
-            <img class="landing-moon" src="/public/assets/240px_moon.png" alt="" />
-            <img class="landing-rocket" src="/public/assets/240px_rocket.png" alt="" />
+            <img class="landing-moon" src="${asset("240px_moon.png")}" alt="" />
+            <img class="landing-rocket" src="${asset("240px_rocket.png")}" alt="" />
           </div>
           <div class="center-message"></div>
           <div class="energy-bar"><span></span></div>
@@ -693,7 +714,7 @@ function updateGame(delta) {
 
 root.addEventListener("pointerdown", (event) => {
   speech.hasUserGesture = true;
-  startSpeechRecognition({ fromUserGesture: true });
+  startVoiceInput({ fromUserGesture: true });
   const target = event.target.closest("button");
   if (!target) return;
   if (handleButtonAction(target)) {
@@ -717,7 +738,7 @@ root.addEventListener("click", (event) => {
 root.addEventListener("change", (event) => {
   if (event.target.dataset.action !== "language") return;
   state.language = event.target.value;
-  localStorage.setItem("settings.language", state.language);
+  writeStoredValue("settings.language", state.language);
   state.status = STRINGS[state.language].micStatus;
   render();
 });
@@ -753,6 +774,18 @@ function readSpeechTranscript(event) {
   return transcripts.join(" ");
 }
 
+function handleSpeechTranscript(transcript) {
+  if (!transcript) return;
+  state.heardSpeech = normalizeSpeechText(transcript).slice(0, 36);
+  if (state.phase === "waitingLaunch" && transcriptMatchesAny(transcript, LAUNCH_WORDS)) {
+    startGame();
+  } else if ((state.phase === "replayPrompt" || state.phase === "failed") && transcriptMatchesAny(transcript, REPLAY_WORDS)) {
+    reset();
+  } else {
+    updateUi();
+  }
+}
+
 function scheduleSpeechRestart(delay = 700) {
   if (!speech.shouldListen || (state.phase !== "waitingLaunch" && state.phase !== "replayPrompt" && state.phase !== "failed")) {
     return;
@@ -785,15 +818,7 @@ function createSpeechRecognition() {
 
   recognition.onresult = (event) => {
     const transcript = readSpeechTranscript(event);
-    if (!transcript) return;
-    state.heardSpeech = normalizeSpeechText(transcript).slice(0, 36);
-    if (state.phase === "waitingLaunch" && transcriptMatchesAny(transcript, LAUNCH_WORDS)) {
-      startGame();
-    } else if ((state.phase === "replayPrompt" || state.phase === "failed") && transcriptMatchesAny(transcript, REPLAY_WORDS)) {
-      reset();
-    } else {
-      updateUi();
-    }
+    handleSpeechTranscript(transcript);
   };
 
   recognition.onerror = (event) => {
@@ -847,6 +872,15 @@ function startSpeechRecognition(options = {}) {
   }
 }
 
+function startVoiceInput(options = {}) {
+  if (window.SHOUT_MOON_NATIVE_AUDIO) {
+    speech.shouldListen = true;
+    if (options.fromUserGesture) speech.hasUserGesture = true;
+    return;
+  }
+  startSpeechRecognition(options);
+}
+
 async function startMeter() {
   if (!navigator.mediaDevices?.getUserMedia) {
     state.status = "Browser microphone API is not available.";
@@ -855,7 +889,11 @@ async function startMeter() {
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const audioContext = new AudioContext();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error("Browser audio analysis API is not available.");
+    }
+    const audioContext = new AudioContextClass();
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 1024;
@@ -888,6 +926,31 @@ async function startMeter() {
   }
 }
 
+window.addEventListener("native-decibel", (event) => {
+  const db = Number(event.detail?.db);
+  if (!Number.isFinite(db)) return;
+  if (state.phase === "clapPrompt") {
+    state.db = clampDb(db);
+    state.maxDb = Math.max(state.maxDb, state.db);
+    registerClap(db);
+  } else {
+    setMeasuredDb(db);
+  }
+});
+
+window.addEventListener("native-speech", (event) => {
+  handleSpeechTranscript(String(event.detail?.transcript ?? ""));
+});
+
+window.addEventListener("native-audio-status", (event) => {
+  const message = String(event.detail?.message ?? "");
+  if (!message) return;
+  state.status = message;
+  updateUi();
+});
+
 render();
-startSpeechRecognition();
-startMeter();
+if (!window.SHOUT_MOON_NATIVE_AUDIO) {
+  startVoiceInput();
+  startMeter();
+}

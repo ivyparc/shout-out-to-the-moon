@@ -19,14 +19,7 @@ target 'ShoutOuttotheMoon' do
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else
-    config_command = [
-      'npx',
-      'expo-modules-autolinking',
-      'react-native-config',
-      '--json',
-      '--platform',
-      'ios'
-    ]
+    config_command = ['node', File.join(__dir__, '..', 'scripts', 'react-native-config-ios.mjs')]
   end
 
   config = use_native_modules!(config_command)

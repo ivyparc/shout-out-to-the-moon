@@ -1,5 +1,3 @@
-import * as Localization from "expo-localization";
-
 export type LanguageCode = "ko" | "en" | "ja" | "zh-Hans" | "zh-Hant";
 
 export const LANGUAGE_OPTIONS: Array<{ code: LanguageCode; label: string }> = [
@@ -44,6 +42,6 @@ export function mapLocaleToLanguage(locale: string | null | undefined): Language
 }
 
 export function getInitialLanguage(): LanguageCode {
-  const locale = Localization.getLocales()[0]?.languageTag;
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
   return mapLocaleToLanguage(locale);
 }

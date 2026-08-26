@@ -12,10 +12,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "2",
-      "bundleIdentifier": "com.ivyparc.shoutouttothemoon",
+      "buildNumber": "8",
+      "bundleIdentifier": "com.sunnyinnolab.ShoutOut",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "The microphone is used to measure your shout volume and move the rocket.",
+        "NSSpeechRecognitionUsageDescription": "Speech recognition is used to detect launch and replay voice commands.",
         "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
       }
     },

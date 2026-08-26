@@ -139,7 +139,7 @@ select {
   z-index: 3;
   width: 128px;
   height: 48px;
-  background-image: url("/public/assets/clouds.png");
+  background-image: var(--cloud-image, url("public/assets/clouds.png"));
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
