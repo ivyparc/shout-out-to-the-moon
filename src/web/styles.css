@@ -30,6 +30,7 @@ select {
 }
 
 .top {
+  display: none;
   text-align: center;
 }
 
@@ -57,9 +58,40 @@ select {
   --rocket-art-bottom-offset: 52px;
   --rocket-visible-gap-fix: 28px;
   position: relative;
-  height: calc(100% - 162px);
+  height: calc(100% - 136px);
   overflow: hidden;
   background: #eeeeee;
+  transition: background 260ms ease;
+}
+
+.atmosphere-layer { display: none; }
+
+.sky[data-segment="0"] {
+  background: #9fc8e8;
+}
+
+.sky[data-segment="1"] {
+  background: #eaf5fb;
+}
+
+.sky[data-segment="2"] {
+  background: #dcecf7;
+}
+
+.sky[data-segment="3"] {
+  background: #ceddf0;
+}
+
+.sky[data-segment="4"] {
+  background: #bbc9e3;
+}
+
+.sky[data-segment="5"] {
+  background: #a9afd0;
+}
+
+.sky[data-segment="6"] {
+  background: #9297bb;
 }
 
 .hud {
@@ -78,6 +110,30 @@ select {
   border-radius: 6px;
   padding: 4px 6px;
   background: rgba(255, 255, 255, 0.76);
+}
+
+.coin-pill {
+  display: inline-block;
+  margin-left: 4px;
+  border: 1px solid rgba(79, 87, 99, 0.35);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.distance-markers {
+  position: absolute;
+  top: 19%;
+  bottom: 20%;
+  left: 12px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #686d74;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .mini-map {
@@ -124,26 +180,38 @@ select {
   transition: transform 80ms linear;
 }
 
+.background-track { position:absolute; inset:0; z-index:0; pointer-events:none; }
+.background-strip { position:absolute; left:0; right:0; height:100%; background-position:center; background-size:100% 100%; background-repeat:no-repeat; }
+.background-strip-0 { top:0; background:#9fc8e8 !important; background-image:none !important; }
+.background-strip-1 { top:100%; }
+.background-strip-2 { top:200%; }
+.background-strip-3 { top:300%; }
+.background-strip-4 { top:400%; }
+.background-strip-5 { top:500%; }
+
 .launch-pad {
   position: absolute;
-  left: 20%;
-  right: 20%;
+  left: 38%;
+  right: 38%;
   bottom: 0;
-  height: var(--launch-pad-height);
-  border: 2px solid #777777;
-  background: #fff5c9;
+  height: 14%;
+  border: 0;
+  background: url("public/assets/Launchpad_Big.png") center bottom / contain no-repeat;
 }
 
 .cloud {
   position: absolute;
   z-index: 3;
-  width: 128px;
-  height: 48px;
-  background-image: var(--cloud-image, url("public/assets/clouds.png"));
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
+  width: 170px;
+  height: 64px;
   pointer-events: none;
+}
+
+.cloud img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .cloud::before,
@@ -153,7 +221,7 @@ select {
 
 .back-cloud {
   z-index: 2;
-  opacity: 0.86;
+  opacity: 0.62;
 }
 
 .front-cloud {
@@ -180,7 +248,9 @@ select {
 .rocket {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--launch-pad-height) - var(--rocket-art-bottom-offset) - var(--rocket-visible-gap-fix));
+  /* The rocket art has a 52px transparent lower margin; keep its base on
+     the launchpad top instead of lifting the whole sprite by pad height. */
+  bottom: 34px;
   width: 136px;
   height: 184px;
   transform: translateX(-50%) scale(0.64);
@@ -190,7 +260,7 @@ select {
 }
 
 .rocket.launching {
-  transform: translateX(-50%) scale(0.64);
+  transform: translateX(-50%) translateY(-110px) scale(0.64);
 }
 
 .rocket:not(.launching) .flame {
@@ -339,6 +409,11 @@ select {
   top: 74%;
 }
 
+.center-message.phase-failed {
+  top: 48%;
+  width: 94%;
+}
+
 .center-message strong,
 .center-message span {
   display: block;
@@ -356,50 +431,73 @@ select {
   font-size: 36px;
 }
 
-.energy-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 19;
-  height: 24px;
-  border-top: 2px solid #5f6570;
-  background: #eeeeee;
-}
-
-.energy-bar span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: #fff800;
-  transition: width 80ms linear;
-}
-
 .hidden {
   display: none;
 }
 
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  height: 74px;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 2px solid #5f6570;
+  background: #eeeeee;
+}
+
+.stats-row button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #5f6570;
+  border-radius: 8px;
+  color: #111111;
+  background: #fff4c9;
+  font-size: 14px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.stats-row strong {
+  display: block;
+  font-size: 15px;
+}
+
 .meter {
+  position: relative;
   width: 100%;
   height: 62px;
   display: flex;
   align-items: center;
-  justify-content: space-around;
-  border: 0;
-  border-top: 2px solid #a8a69c;
+  justify-content: center;
+  overflow: hidden;
+  border-top: 2px solid #5f6570;
   color: #555d68;
   background: #d8edff;
-  cursor: pointer;
 }
 
 .meter strong {
+  position: relative;
+  z-index: 2;
   font-size: 23px;
   font-weight: 900;
 }
 
-.meter span {
-  font-size: 16px;
-  font-weight: 700;
+.meter b {
+  color: #3f4650;
+}
+
+.fuel-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 100%;
+  background: #dcefd6;
+  transition: width 100ms linear;
 }
 
 .test-label {
@@ -415,7 +513,9 @@ select {
 .buttons {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  height: 76px;
+  flex-basis: 100%;
+  width: 100%;
+  height: 44px;
   background: #fff4c9;
 }
 
@@ -425,13 +525,13 @@ select {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-top: 2px solid #a8a69c;
+  border: 1px solid #a8a69c;
   border-right: 2px solid #a8a69c;
   background: transparent;
   color: #101317;
-  font-size: 23px;
+  font-size: 15px;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 18px;
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
@@ -477,5 +577,68 @@ select {
 .bottom p {
   flex-basis: 100%;
   min-height: 18px;
+  text-align: center;
+}
+
+.result-card {
+  width: min(88%, 360px);
+  margin: 0 auto;
+  padding: 24px 20px;
+  border: 2px solid #686d74;
+  border-radius: 32px;
+  color: #111111;
+  background: rgba(238, 238, 238, 0.96);
+  pointer-events: auto;
+}
+
+.result-card strong {
+  margin-bottom: 22px;
+  color: #000000;
+  font-size: 28px;
+}
+
+.result-card span {
+  margin-top: 6px;
+  color: #000000;
+  font-size: 24px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.result-card em {
+  display: block;
+  margin: -10px 0 14px;
+  color: #565d66;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.upgrade-list {
+  margin: 24px 0 18px;
+}
+
+.upgrade-list button,
+.result-actions button {
+  display: block;
+  width: 100%;
+  border: 0;
+  color: #000000;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.result-actions {
+  display: flex;
+  justify-content: space-around;
+  gap: 10px;
+}
+
+.result-actions button {
+  width: auto;
+  font-size: 20px;
+  font-weight: 800;
   text-align: center;
 }

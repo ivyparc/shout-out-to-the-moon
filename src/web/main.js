@@ -1,12 +1,11 @@
 const BASE_WIDTH = 1179;
 const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
-const ENERGY_SECONDS = 45;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
 const MOON_TRIGGER_PROGRESS = 0.62;
 const MOON_APPEAR_PROGRESS = 0.36;
-const WORLD_SCROLL_PIXELS = 780;
+const WORLD_SCROLL_PIXELS = 4200;
 const CLOUD_SCROLL_PIXELS = 360;
 const CLAP_WINDOW_MS = 8000;
 const CLAP_MIN_GAP_MS = 260;
@@ -16,10 +15,52 @@ const HOLD_TARGET_MAX = 60;
 const HOLD_REQUIRED_MS = 5000;
 const HOLD_FAIL_GRACE_MS = 2200;
 const HOLD_START_GRACE_MS = 1500;
-const CLAP_MIN_ENERGY_MS = 12000;
-const HOLD_MIN_ENERGY_MS = 10000;
 const LAUNCH_WORDS = ["launch", "launched", "launches", "lunch", "런치", "론치"];
+const SEPARATION_WORDS = ["separation", "separate", "세퍼레이션", "세퍼레이션이라고", "분리"];
 const REPLAY_WORDS = ["replay", "yes", "restart", "again", "예스", "다시", "리플레이"];
+
+const DEFAULT_STATS = {
+  speed: 10,
+  fuel: 10,
+  money: 1,
+  coins: 0,
+};
+
+const UPGRADE_COSTS = {
+  speed: [
+    { min: 10, max: 20, cost: 50 },
+    { min: 21, max: 30, cost: 100 },
+    { min: 31, max: 40, cost: 150 },
+    { min: 41, max: 50, cost: 200 },
+    { min: 51, max: Infinity, cost: 250 },
+  ],
+  fuel: [
+    { min: 10, max: 20, cost: 50 },
+    { min: 21, max: 30, cost: 100 },
+    { min: 31, max: 40, cost: 150 },
+    { min: 41, max: 50, cost: 200 },
+    { min: 51, max: Infinity, cost: 250 },
+  ],
+  money: [
+    { min: 1, max: 2, cost: 50 },
+    { min: 2.1, max: 3, cost: 100 },
+    { min: 3.1, max: 4, cost: 150 },
+    { min: 4.1, max: 5, cost: 200 },
+    { min: 5.1, max: Infinity, cost: 250 },
+  ],
+};
+
+const DISTANCE_SEGMENTS = [
+  { name: "Launch Pad", distance: 1000 },
+  { name: "Troposphere", distance: 3000 },
+  { name: "Stratosphere", distance: 3000 },
+  { name: "Mesosphere", distance: 3500 },
+  { name: "Thermosphere", distance: 3000 },
+  { name: "Exosphere", distance: 3000 },
+  { name: "Space", distance: 3000 },
+];
+
+const TOTAL_DISTANCE_KM = DISTANCE_SEGMENTS.reduce((sum, segment) => sum + segment.distance, 0);
 
 const DB_RANGES = [
   { id: "20-40", min: 20, max: 40, label: ["20", "40"] },
@@ -50,8 +91,11 @@ const STRINGS = {
     max: "최대",
     test: "테스트 dB",
     timer: "Energy",
+    coins: "Coins",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
+    separationPrompt: "Say “Separation”",
+    separationHint: "연료가 50% 남았습니다",
     avoidUfo: "UFO를 피하세요!",
     avoidUfoHint: "소리를 크게/작게 내서 속도를 바꾸세요",
     getReadyHold: "곧 50~60dB 유지!",
@@ -74,6 +118,10 @@ const STRINGS = {
     holdFailed: "50~60dB를 5초간 유지하지 못했습니다.",
     ufoFailed: "UFO에 닿았습니다. UFO가 보이는 동안은 dB로 속도를 조절해 피하세요.",
     energyFailed: "Energy가 0이 되었습니다.",
+    distance: "Distance",
+    earn: "Earn",
+    exit: "Exit",
+    continue: "Continue",
   },
   en: {
     title: "Shout Out to the Moon",
@@ -82,8 +130,11 @@ const STRINGS = {
     max: "Max",
     test: "Test dB",
     timer: "Energy",
+    coins: "Coins",
     waitingLaunch: "Say “Launch”",
     flying: "Make some noise!",
+    separationPrompt: "Say “Separation”",
+    separationHint: "Fuel is at 50%",
     avoidUfo: "Avoid the UFO!",
     avoidUfoHint: "Change your dB to speed up or slow down",
     getReadyHold: "Get ready: hold 50-60dB!",
@@ -106,6 +157,10 @@ const STRINGS = {
     holdFailed: "You did not hold 50-60dB for 5 seconds.",
     ufoFailed: "You touched the UFO. Change dB to dodge it while it is on screen.",
     energyFailed: "Energy reached zero.",
+    distance: "Distance",
+    earn: "Earn",
+    exit: "Exit",
+    continue: "Continue",
   },
 };
 
@@ -115,7 +170,15 @@ const state = {
   db: 0,
   maxDb: 0,
   progress: 0,
-  timeLeftMs: ENERGY_SECONDS * 1000,
+  distanceKm: 0,
+  fuelRemaining: DEFAULT_STATS.fuel,
+  speedMultiplier: DEFAULT_STATS.speed,
+  fuelCapacity: DEFAULT_STATS.fuel,
+  moneyMultiplier: DEFAULT_STATS.money,
+  coins: DEFAULT_STATS.coins,
+  lastEarnedCoins: 0,
+  hasSettledRun: false,
+  separationDone: false,
   lastTick: Date.now(),
   manualModeUntil: 0,
   lastButtonActionAt: 0,
@@ -148,7 +211,7 @@ const root = document.getElementById("root");
 state.status = STRINGS[state.language].micStatus;
 
 function asset(name) {
-  return window.SHOUT_MOON_ASSETS?.[name] ?? `public/assets/${name}`;
+  return window.SHOUT_MOON_ASSETS?.[name] ?? `assets/${name}`;
 }
 
 function readStoredValue(key) {
@@ -165,6 +228,30 @@ function writeStoredValue(key, value) {
   } catch {
     // Storage can be unavailable in embedded WebViews. The game should keep running.
   }
+}
+
+function readStoredNumber(key, fallback) {
+  const stored = Number(readStoredValue(key));
+  return Number.isFinite(stored) ? stored : fallback;
+}
+
+function loadEconomy() {
+  const storedSpeed = readStoredNumber("stats.speed", DEFAULT_STATS.speed);
+  const storedFuel = readStoredNumber("stats.fuel", DEFAULT_STATS.fuel);
+  const storedMoney = readStoredNumber("stats.money", DEFAULT_STATS.money);
+  state.speedMultiplier = storedSpeed < DEFAULT_STATS.speed ? DEFAULT_STATS.speed : storedSpeed;
+  state.fuelCapacity = storedFuel < DEFAULT_STATS.fuel ? DEFAULT_STATS.fuel : storedFuel;
+  state.moneyMultiplier = storedMoney < DEFAULT_STATS.money ? DEFAULT_STATS.money : storedMoney;
+  state.coins = Math.max(0, readStoredNumber("stats.coins", DEFAULT_STATS.coins));
+  saveEconomy();
+  state.fuelRemaining = state.fuelCapacity;
+}
+
+function saveEconomy() {
+  writeStoredValue("stats.speed", String(state.speedMultiplier));
+  writeStoredValue("stats.fuel", String(state.fuelCapacity));
+  writeStoredValue("stats.money", String(state.moneyMultiplier));
+  writeStoredValue("stats.coins", String(state.coins));
 }
 
 function getLanguage() {
@@ -189,9 +276,72 @@ function getRange(db) {
   return DB_RANGES.find((range) => db >= range.min && db < range.max) ?? DB_RANGES[0];
 }
 
-function formatTime(ms) {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  return `0:${String(totalSeconds).padStart(2, "0")}`;
+function formatNumber(value, digits = 0) {
+  return Number(value).toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+}
+
+function formatStat(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function currentSpeedKms() {
+  return Math.round(0.012 * state.db * state.db * state.speedMultiplier);
+}
+
+function getFuelRatio() {
+  return clamp(state.fuelRemaining / Math.max(1, state.fuelCapacity), 0, 1);
+}
+
+function syncProgressFromDistance() {
+  state.progress = clamp(state.distanceKm / TOTAL_DISTANCE_KM, 0, 1);
+}
+
+function upgradeCost(type) {
+  const value =
+    type === "speed" ? state.speedMultiplier : type === "fuel" ? state.fuelCapacity : state.moneyMultiplier;
+  const table = UPGRADE_COSTS[type] ?? [];
+  const fallback = table.length > 0 ? table[table.length - 1].cost : 0;
+  return table.find((entry) => value >= entry.min && value <= entry.max)?.cost ?? fallback;
+}
+
+function nextUpgradeValue(type) {
+  if (type === "money") return Number((state.moneyMultiplier + 0.1).toFixed(1));
+  if (type === "fuel") return state.fuelCapacity + 1;
+  return state.speedMultiplier + 1;
+}
+
+function applyUpgrade(type) {
+  const cost = upgradeCost(type);
+  if (state.coins < cost) return false;
+  state.coins -= cost;
+  if (type === "speed") state.speedMultiplier = nextUpgradeValue(type);
+  if (type === "fuel") state.fuelCapacity = nextUpgradeValue(type);
+  if (type === "money") state.moneyMultiplier = nextUpgradeValue(type);
+  saveEconomy();
+  updateUi();
+  return true;
+}
+
+function getCurrentSegment() {
+  let start = 0;
+  for (let index = 0; index < DISTANCE_SEGMENTS.length; index += 1) {
+    const segment = DISTANCE_SEGMENTS[index];
+    const end = start + segment.distance;
+    if (state.distanceKm <= end || index === DISTANCE_SEGMENTS.length - 1) {
+      return { ...segment, index, start, end };
+    }
+    start = end;
+  }
+  return { name: "Moon", index: DISTANCE_SEGMENTS.length, start: TOTAL_DISTANCE_KM, end: TOTAL_DISTANCE_KM };
+}
+
+function getDistanceMarker(index) {
+  if (state.distanceKm < 100) return (index + 1) * 100;
+  const center = Math.max(100, Math.round(state.distanceKm / 100) * 100);
+  return Math.max(0, center + (index - 1) * 100);
 }
 
 function flameLevel(db) {
@@ -202,16 +352,21 @@ function flameLevel(db) {
   return 5;
 }
 
-function getFlameAsset(db) {
-  return asset(`240px_level${flameLevel(db)}.png`);
-}
-
 function isRunningPhase() {
-  return state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "holdPrompt";
+  return (
+    state.phase === "flying" ||
+    state.phase === "separationPrompt" ||
+    state.phase === "clapPrompt" ||
+    state.phase === "holdPrompt"
+  );
 }
 
 function canAcceptDb() {
-  return state.phase === "flying" || state.phase === "holdPrompt";
+  return state.phase === "flying" || state.phase === "separationPrompt" || state.phase === "holdPrompt";
+}
+
+function isDistancePhase() {
+  return state.phase === "flying" || state.phase === "separationPrompt";
 }
 
 function startGame() {
@@ -222,7 +377,11 @@ function startGame() {
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
-  state.timeLeftMs = ENERGY_SECONDS * 1000;
+  state.distanceKm = 0;
+  state.fuelRemaining = state.fuelCapacity;
+  state.lastEarnedCoins = 0;
+  state.hasSettledRun = false;
+  state.separationDone = false;
   state.lastTick = Date.now();
   state.manualModeUntil = 0;
   state.clapCount = 0;
@@ -235,6 +394,23 @@ function startGame() {
   updateUi();
 }
 
+function beginSeparationPrompt() {
+  if (state.phase !== "flying" || state.separationDone) return;
+  state.phase = "separationPrompt";
+  state.status = "";
+  speech.shouldListen = true;
+  startVoiceInput({ force: true });
+  updateUi();
+}
+
+function completeSeparation() {
+  if (state.phase !== "separationPrompt") return;
+  state.phase = "flying";
+  state.separationDone = true;
+  state.status = "";
+  updateUi();
+}
+
 function beginClapChallenge() {
   state.phase = "clapPrompt";
   state.db = 0;
@@ -242,7 +418,6 @@ function beginClapChallenge() {
   state.clapStartedAt = Date.now();
   state.lastClapAt = 0;
   state.manualModeUntil = 0;
-  state.timeLeftMs = Math.max(state.timeLeftMs, CLAP_MIN_ENERGY_MS);
   state.status = "";
   updateUi();
 }
@@ -255,7 +430,6 @@ function beginHoldChallenge() {
   state.holdStartedAt = Date.now();
   state.ufoExitStartedAt = Date.now();
   state.manualModeUntil = 0;
-  state.timeLeftMs = Math.max(state.timeLeftMs, HOLD_MIN_ENERGY_MS);
   state.status = "";
   updateUi();
 }
@@ -288,6 +462,12 @@ function completeLanding() {
 }
 
 function failGame(message) {
+  if (!state.hasSettledRun) {
+    state.lastEarnedCoins = Math.max(0, Math.floor((state.distanceKm / 100) * state.moneyMultiplier));
+    state.coins += state.lastEarnedCoins;
+    state.hasSettledRun = true;
+    saveEconomy();
+  }
   state.phase = "failed";
   state.status = message;
   speech.shouldListen = true;
@@ -300,7 +480,11 @@ function reset() {
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
-  state.timeLeftMs = ENERGY_SECONDS * 1000;
+  state.distanceKm = 0;
+  state.fuelRemaining = state.fuelCapacity;
+  state.lastEarnedCoins = 0;
+  state.hasSettledRun = false;
+  state.separationDone = false;
   state.lastTick = Date.now();
   state.manualModeUntil = 0;
   state.clapCount = 0;
@@ -352,6 +536,10 @@ function handleButtonAction(target) {
     startGame();
     return true;
   }
+  if (target.dataset.action === "debug-separation") {
+    completeSeparation();
+    return true;
+  }
   if (target.dataset.action === "enable-voice") {
     startVoiceInput({ fromUserGesture: true, force: true });
     return true;
@@ -368,7 +556,12 @@ function handleButtonAction(target) {
     if (state.phase === "replayPrompt" || state.phase === "failed") reset();
     return true;
   }
+  if (target.dataset.upgrade) {
+    applyUpgrade(target.dataset.upgrade);
+    return true;
+  }
   if (target.dataset.min && target.dataset.max) {
+    if (state.phase === "waitingLaunch") startGame();
     setMeasuredDb(randomDb(Number(target.dataset.min), Number(target.dataset.max)));
     return true;
   }
@@ -383,7 +576,7 @@ function getBoardSize() {
 }
 
 function getSkyHeight() {
-  return getBoardSize().height - 162;
+  return getBoardSize().height - 136;
 }
 
 function getWorldScrollRatio(progress = state.progress) {
@@ -414,54 +607,61 @@ function render() {
       </header>
       <section class="phone" style="width:${board.width}px;height:${board.height}px">
         <div class="sky">
+          <div class="atmosphere-layer" aria-hidden="true"></div>
           <div class="hud">
             <span class="timer"></span>
+            <span class="coin-pill"></span>
+          </div>
+          <div class="distance-markers" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
           <div class="mini-map">
-            <img class="mini-moon" src="${asset("24px_moon.png")}" alt="" />
-            <img class="mini-rocket" src="${asset("24px_rocket.png")}" alt="" />
+            <img class="mini-moon" src="${asset("MiniMoon_64.png")}" alt="" />
+            <img class="mini-rocket" src="${asset("MiniRocket_64.png")}" alt="" />
           </div>
           <div class="world">
+            <div class="background-track" aria-hidden="true">
+              ${["troposphere.png", "stratosphere.png", "mesosphere.png", "thermosphere.png", "exosphere.png", "space.png"].map((name, index) => `<div class="background-strip background-strip-${index}" style="background-image:url('${asset(name)}')"></div>`).join("")}
+            </div>
             <div class="launch-pad"></div>
             ${CLOUDS.map((cloud, index) => `
-              <div class="cloud cloud-${index} ${cloud.front ? "front-cloud" : "back-cloud"}"></div>
+              <div class="cloud cloud-${index} ${cloud.front ? "front-cloud" : "back-cloud"}"><img src="${asset("clouds.png")}" alt="" /></div>
             `).join("")}
-            <img class="big-moon" src="${asset("240px_moon.png")}" alt="" />
+            <img class="big-moon" src="${asset("Moon.png")}" alt="" />
             <div class="ufo" aria-hidden="true">
               <img src="${asset("ufo_128.png")}" alt="" />
             </div>
           </div>
           <div class="rocket">
-            <img class="rocket-art" src="${asset("240px_rocket.png")}" alt="" />
+            <img class="rocket-art" src="${asset("Rocket_256.png")}" alt="" />
             <div class="flame" aria-hidden="true">
               ${[1, 2, 3, 4, 5].map((level) => `
-                <img class="flame-image flame-level-${level}" src="${asset(`240px_level${level}.png`)}" alt="" />
+                <img class="flame-image flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
               `).join("")}
             </div>
           </div>
           <div class="landing-scene" aria-hidden="true">
-            <img class="landing-moon" src="${asset("240px_moon.png")}" alt="" />
-            <img class="landing-rocket" src="${asset("240px_rocket.png")}" alt="" />
+            <img class="landing-moon" src="${asset("Moon_Rabbit.png")}" alt="" />
+            <img class="landing-rocket" src="${asset("Rocket_256.png")}" alt="" />
           </div>
           <div class="center-message"></div>
-          <div class="energy-bar"><span></span></div>
         </div>
-        <button class="meter" type="button" data-action="reset">
+        <div class="stats-row">
+          <button type="button" data-upgrade="speed"><span>Speed</span><strong></strong></button>
+          <button type="button" data-upgrade="fuel"><span>Fuel</span><strong></strong></button>
+          <button type="button" data-upgrade="money"><span>Money</span><strong></strong></button>
+        </div>
+        <div class="meter">
+          <span class="fuel-fill"></span>
           <strong></strong>
-          <span></span>
-        </button>
-        <div class="test-label">${text.test}</div>
-        <div class="buttons">
-          ${DB_RANGES.map((item) => `
-            <button type="button" data-range-id="${item.id}" data-min="${item.min}" data-max="${item.max}">
-              <span>${item.label[0]}</span><span>${item.label[1]}</span>
-            </button>
-          `).join("")}
         </div>
       </section>
       <footer class="bottom">
         <button type="button" data-action="enable-voice">${text.voiceEnable}</button>
         <button type="button" data-action="debug-launch">Launch</button>
+        <button type="button" data-action="debug-separation">Separation</button>
         <button type="button" data-action="debug-clap">Clap</button>
         <button type="button" data-action="debug-hold">55dB</button>
         <button type="button" data-action="debug-replay">Replay</button>
@@ -469,6 +669,13 @@ function render() {
           <option value="en" ${state.language === "en" ? "selected" : ""}>English</option>
           <option value="ko" ${state.language === "ko" ? "selected" : ""}>Korean</option>
         </select>
+        <div class="buttons">
+          ${DB_RANGES.map((item) => `
+            <button type="button" data-range-id="${item.id}" data-min="${item.min}" data-max="${item.max}">
+              <span>${item.label[0]}</span><span>${item.label[1]}</span>
+            </button>
+          `).join("")}
+        </div>
         <p></p>
       </footer>
     </main>
@@ -481,18 +688,48 @@ function updateUi() {
   const displayedDb = state.phase === "waitingLaunch" ? 0 : Math.round(state.db);
   const range = getRange(state.db);
   const flightDistance = clamp(state.progress, 0, 1);
-  const energyRatio = clamp(state.timeLeftMs / (ENERGY_SECONDS * 1000), 0, 1);
+  const fuelRatio = getFuelRatio();
   const ufo = getUfoState();
+  const segment = getCurrentSegment();
+
+  const sky = root.querySelector(".sky");
+  if (sky) {
+    sky.dataset.segment = String(segment.index);
+    const backgrounds = ["Launchpad_Big.png", "troposphere.png", "stratosphere.png", "mesosphere.png", "thermosphere.png", "exosphere.png", "space.png"];
+    const atmosphere = sky.querySelector(".atmosphere-layer");
+    if (atmosphere) {
+      const nextBackground = segment.index <= 1 ? "none" : `url("${asset(backgrounds[segment.index] ?? "space.png")}")`;
+      if (atmosphere.dataset.segment !== String(segment.index)) {
+        atmosphere.dataset.segment = String(segment.index);
+        atmosphere.classList.remove("reveal");
+        void atmosphere.offsetWidth;
+        atmosphere.classList.add("reveal");
+      }
+      atmosphere.style.backgroundImage = nextBackground;
+    }
+  }
 
   const timer = root.querySelector(".timer");
-  if (timer) timer.textContent = `${text.timer}: ${formatTime(state.timeLeftMs)}`;
+  if (timer) timer.textContent = `Fuel: ${formatStat(state.fuelRemaining)} t`;
+
+  const coinPill = root.querySelector(".coin-pill");
+  if (coinPill) coinPill.textContent = `${text.coins}: ${formatNumber(state.coins)}`;
+
+  root.querySelectorAll(".distance-markers span").forEach((marker, index) => {
+    // The top of the viewport is farther along the ascent, so markers descend
+    // from the largest distance to the smallest near the launch pad.
+    marker.textContent = formatNumber(getDistanceMarker(2 - index));
+  });
 
   const world = root.querySelector(".world");
   if (world) world.style.setProperty("--scroll", `${flightDistance * WORLD_SCROLL_PIXELS}px`);
+  const launchPad = root.querySelector(".launch-pad");
+  if (launchPad) launchPad.style.backgroundImage = `url("${asset("Launchpad_Big.png")}")`;
 
   root.querySelectorAll(".cloud").forEach((cloud, index) => {
     const config = CLOUDS[index];
-    const drift = Math.sin((flightDistance * 8 + config.delay) * Math.PI) * 28;
+    cloud.style.display = segment.index === 1 ? "none" : "block";
+    const drift = Math.sin((Date.now() / 9000 + config.delay) * Math.PI * 2) * 28;
     cloud.style.left = `${config.x * 100}%`;
     cloud.style.top = `${config.y * 100}%`;
     cloud.style.transform = `translate(${drift}px, ${flightDistance * CLOUD_SCROLL_PIXELS}px) scale(${config.scale})`;
@@ -547,13 +784,21 @@ function updateUi() {
     centerMessage.innerHTML = getCenterMessage(text);
   }
 
-  const energyFill = root.querySelector(".energy-bar span");
-  if (energyFill) energyFill.style.width = `${energyRatio * 100}%`;
+  const stats = root.querySelectorAll(".stats-row button strong");
+  if (stats[0]) stats[0].textContent = `X ${formatStat(state.speedMultiplier)}`;
+  if (stats[1]) stats[1].textContent = `${formatStat(state.fuelCapacity)} t`;
+  if (stats[2]) stats[2].textContent = `X ${formatStat(state.moneyMultiplier)}`;
 
   const currentDb = root.querySelector(".meter strong");
-  const maxDb = root.querySelector(".meter span");
-  if (currentDb) currentDb.textContent = `${displayedDb} dB`;
-  if (maxDb) maxDb.textContent = `${text.max}: ${state.maxDb} dB`;
+  if (currentDb) {
+    currentDb.innerHTML =
+      state.phase === "waitingLaunch"
+        ? text.waitingLaunch
+        : `${displayedDb} dB X ${formatStat(state.speedMultiplier)} = <b>${formatNumber(currentSpeedKms())}</b> KM/S`;
+  }
+
+  const fuelFill = root.querySelector(".fuel-fill");
+  if (fuelFill) fuelFill.style.width = `${fuelRatio * 100}%`;
 
   const footerStatus = root.querySelector(".bottom p");
   if (footerStatus) {
@@ -569,6 +814,9 @@ function updateUi() {
 function getCenterMessage(text) {
   if (state.phase === "waitingLaunch") return text.waitingLaunch;
   if (state.phase === "flying") {
+    if (!state.separationDone && getFuelRatio() <= 0.5) {
+      return `<strong>${text.separationPrompt}</strong><span>${text.separationHint}</span>`;
+    }
     if (state.progress >= MOON_TRIGGER_PROGRESS * 0.72 && hasUfoClearedRocketForChallenge()) {
       return `<strong>${text.getReadyHold}</strong><span>${text.holdHint}</span>`;
     }
@@ -576,6 +824,9 @@ function getCenterMessage(text) {
       return `<strong>${text.avoidUfo}</strong><span>${text.avoidUfoHint}</span>`;
     }
     return text.flying;
+  }
+  if (state.phase === "separationPrompt") {
+    return `<strong>${text.separationPrompt}</strong><span>${text.separationHint}</span>`;
   }
   if (state.phase === "clapPrompt") {
     const clapsLeft = Math.max(0, 3 - state.clapCount);
@@ -590,9 +841,33 @@ function getCenterMessage(text) {
   if (state.phase === "landed") return `<strong>${text.landedTitle}</strong><span>${text.landedBody}</span>`;
   if (state.phase === "replayPrompt") return text.replayPrompt;
   if (state.phase === "failed") {
-    return `<strong>${text.failed}</strong>${state.status ? `<span>${state.status}</span>` : ""}<span>${text.replayPrompt}</span>`;
+    return `
+      <div class="result-card">
+        <strong>${text.failed}</strong>
+        ${state.status ? `<em>${state.status}</em>` : ""}
+        <span>${text.distance}: ${formatNumber(Math.floor(state.distanceKm))} Km</span>
+        <span>${text.earn}: ${formatNumber(state.lastEarnedCoins)} Coins</span>
+        <div class="upgrade-list">
+          ${getUpgradeLine("speed", "Speed")}
+          ${getUpgradeLine("fuel", "Fuel")}
+          ${getUpgradeLine("money", "Money")}
+        </div>
+        <div class="result-actions">
+          <button type="button" data-action="debug-replay">[ ${text.exit} ]</button>
+          <button type="button" data-action="debug-replay">[ ${text.continue} ]</button>
+        </div>
+      </div>
+    `;
   }
   return "";
+}
+
+function getUpgradeLine(type, label) {
+  const current =
+    type === "speed" ? state.speedMultiplier : type === "fuel" ? state.fuelCapacity : state.moneyMultiplier;
+  const next = nextUpgradeValue(type);
+  const cost = upgradeCost(type);
+  return `<button type="button" data-upgrade="${type}">[${label}: ${formatStat(current)} -> ${formatStat(next)}: ${cost}]</button>`;
 }
 
 function getUfoState() {
@@ -602,6 +877,7 @@ function getUfoState() {
   const viewportY = position.viewportY + exitOffset;
   const activePhase =
     state.phase === "flying" ||
+    state.phase === "separationPrompt" ||
     state.phase === "holdPrompt" ||
     state.phase === "clapPrompt" ||
     state.phase === "landing" ||
@@ -672,16 +948,31 @@ function hasUfoClearedRocketForChallenge() {
 function updateGame(delta) {
   const text = STRINGS[state.language];
   if (isRunningPhase()) {
-    state.timeLeftMs = Math.max(0, state.timeLeftMs - delta);
-    if (state.timeLeftMs <= 0) {
+    // Fuel is a generous flight resource; loud inputs can move hundreds of km/s
+    // without ending the run after only a few seconds.
+    state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * 0.15);
+    if (state.fuelRemaining <= 0) {
       failGame(text.energyFailed);
       return;
     }
   }
 
+  if (isDistancePhase()) {
+    state.distanceKm = Math.min(TOTAL_DISTANCE_KM, state.distanceKm + currentSpeedKms() * (delta / 1000));
+    syncProgressFromDistance();
+    checkUfoCollision();
+    if (!isDistancePhase()) return;
+    if (state.distanceKm >= TOTAL_DISTANCE_KM) {
+      beginLanding();
+      return;
+    }
+  }
+
   if (state.phase === "flying") {
-    const speed = state.db * 0.00000048;
-    state.progress = Math.min(1, state.progress + speed * delta);
+    if (!state.separationDone && getFuelRatio() <= 0.5) {
+      beginSeparationPrompt();
+      return;
+    }
     checkUfoCollision();
     if (state.phase !== "flying") return;
     if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedRocketForChallenge()) beginHoldChallenge();
@@ -779,6 +1070,8 @@ function handleSpeechTranscript(transcript) {
   state.heardSpeech = normalizeSpeechText(transcript).slice(0, 36);
   if (state.phase === "waitingLaunch" && transcriptMatchesAny(transcript, LAUNCH_WORDS)) {
     startGame();
+  } else if (state.phase === "separationPrompt" && transcriptMatchesAny(transcript, SEPARATION_WORDS)) {
+    completeSeparation();
   } else if ((state.phase === "replayPrompt" || state.phase === "failed") && transcriptMatchesAny(transcript, REPLAY_WORDS)) {
     reset();
   } else {
@@ -787,7 +1080,13 @@ function handleSpeechTranscript(transcript) {
 }
 
 function scheduleSpeechRestart(delay = 700) {
-  if (!speech.shouldListen || (state.phase !== "waitingLaunch" && state.phase !== "replayPrompt" && state.phase !== "failed")) {
+  if (
+    !speech.shouldListen ||
+    (state.phase !== "waitingLaunch" &&
+      state.phase !== "separationPrompt" &&
+      state.phase !== "replayPrompt" &&
+      state.phase !== "failed")
+  ) {
     return;
   }
   window.clearTimeout(speech.restartTimer);
@@ -850,7 +1149,14 @@ function startSpeechRecognition(options = {}) {
   const text = STRINGS[state.language];
   if (options.fromUserGesture) speech.hasUserGesture = true;
   if (!speech.shouldListen && !options.force) return;
-  if (state.phase !== "waitingLaunch" && state.phase !== "replayPrompt" && state.phase !== "failed") return;
+  if (
+    state.phase !== "waitingLaunch" &&
+    state.phase !== "separationPrompt" &&
+    state.phase !== "replayPrompt" &&
+    state.phase !== "failed"
+  ) {
+    return;
+  }
   speech.shouldListen = true;
   if (!speech.recognition) speech.recognition = createSpeechRecognition();
   if (!speech.recognition) {
@@ -949,6 +1255,7 @@ window.addEventListener("native-audio-status", (event) => {
   updateUi();
 });
 
+loadEconomy();
 render();
 if (!window.SHOUT_MOON_NATIVE_AUDIO) {
   startVoiceInput();
