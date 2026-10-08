@@ -24,8 +24,8 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 
 1. Say `Launch` to start.
 2. The current dB moves the rocket while the rocket remains visually centered.
-3. Higher dB means faster scrolling movement and a stronger flame.
-4. Avoid the UFO by changing the rocket speed with dB.
+3. Higher dB means faster scrolling movement and a stronger flame. Flight speed is twice the previous speed for the same dB and upgrade level.
+4. Ascend through troposphere, stratosphere, mesosphere, thermosphere, exosphere, then space. The joined backgrounds scroll downward; UFO encounters are temporarily disabled.
 5. Hold `50-60 dB` for 5 seconds when prompted.
 6. Clap 3 times when prompted near the moon.
 7. Land on the moon, then say `Replay` or tap the replay control to restart.

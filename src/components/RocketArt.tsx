@@ -1,4 +1,12 @@
-import { StyleSheet, View } from "react-native";
+import { Image, StyleSheet, View } from "react-native";
+
+const FLAMES = [
+  require("../../public/assets/Flame_Lv1.png"),
+  require("../../public/assets/Flame_Lv2.png"),
+  require("../../public/assets/Flame_Lv3.png"),
+  require("../../public/assets/Flame_Lv4.png"),
+  require("../../public/assets/Flame_Lv5.png"),
+];
 
 type Props = {
   flameLevel: number;
@@ -15,9 +23,11 @@ export function RocketArt({ flameLevel }: Props) {
       </View>
       <View style={styles.leftFin} />
       <View style={styles.rightFin} />
-      <View style={[styles.flameOuter, { height: flameHeight }]}>
-        <View style={styles.flameInner} />
-      </View>
+      <Image
+        source={FLAMES[Math.max(0, Math.min(4, flameLevel - 1))]}
+        style={{ width: flameHeight, height: flameHeight, marginTop: -2 }}
+        resizeMode="contain"
+      />
     </View>
   );
 }
@@ -80,21 +90,5 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 14,
     backgroundColor: "#ff315d",
     transform: [{ rotate: "-20deg" }],
-  },
-  flameOuter: {
-    width: 26,
-    minHeight: 20,
-    marginTop: -2,
-    alignItems: "center",
-    backgroundColor: "#ff7a18",
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-  },
-  flameInner: {
-    width: 12,
-    height: "72%",
-    backgroundColor: "#ffd84d",
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
   },
 });

@@ -3,9 +3,15 @@ const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
-const MOON_TRIGGER_PROGRESS = 0.62;
-const MOON_APPEAR_PROGRESS = 0.36;
-const WORLD_SCROLL_PIXELS = 4200;
+const MOON_TRIGGER_PROGRESS = 0.94;
+const MOON_APPEAR_PROGRESS = 0.82;
+// NASA: lowest to highest. Higher layers sit ABOVE the launch viewport.
+const ATMOSPHERE_BACKGROUNDS = [
+  "troposphere.png", "stratosphere.png", "mesosphere.png",
+  "thermosphere.png", "exosphere.png", "space.png",
+];
+const FLIGHT_SPEED_FACTOR = 2;
+const UFO_ENABLED = false; // Temporary: retain encounter logic for later reactivation.
 const CLOUD_SCROLL_PIXELS = 360;
 const CLAP_WINDOW_MS = 8000;
 const CLAP_MIN_GAP_MS = 260;
@@ -288,7 +294,7 @@ function formatStat(value) {
 }
 
 function currentSpeedKms() {
-  return Math.round(0.012 * state.db * state.db * state.speedMultiplier);
+  return FLIGHT_SPEED_FACTOR * Math.round(0.012 * state.db * state.db * state.speedMultiplier);
 }
 
 function getFuelRatio() {
@@ -576,22 +582,18 @@ function getBoardSize() {
 }
 
 function getSkyHeight() {
-  return getBoardSize().height - 136;
+  return root.querySelector(".sky")?.clientHeight || getBoardSize().height - 140;
 }
 
 function getWorldScrollRatio(progress = state.progress) {
-  return (clamp(progress, 0, 1) * WORLD_SCROLL_PIXELS) / getSkyHeight();
-}
-
-function getCloudScrollRatio(progress = state.progress) {
-  return (clamp(progress, 0, 1) * CLOUD_SCROLL_PIXELS) / getSkyHeight();
+  return clamp(progress, 0, 1) * (ATMOSPHERE_BACKGROUNDS.length - 1);
 }
 
 function getWorldAnchoredViewportY(startProgress, startViewportY) {
-  const worldY = startViewportY - getWorldScrollRatio(startProgress) - getCloudScrollRatio(startProgress);
+  const worldY = startViewportY - getWorldScrollRatio(startProgress);
   return {
     worldY,
-    viewportY: worldY + getWorldScrollRatio() + getCloudScrollRatio(),
+    viewportY: worldY + getWorldScrollRatio(),
   };
 }
 
@@ -607,7 +609,6 @@ function render() {
       </header>
       <section class="phone" style="width:${board.width}px;height:${board.height}px">
         <div class="sky">
-          <div class="atmosphere-layer" aria-hidden="true"></div>
           <div class="hud">
             <span class="timer"></span>
             <span class="coin-pill"></span>
@@ -623,16 +624,14 @@ function render() {
           </div>
           <div class="world">
             <div class="background-track" aria-hidden="true">
-              ${["troposphere.png", "stratosphere.png", "mesosphere.png", "thermosphere.png", "exosphere.png", "space.png"].map((name, index) => `<div class="background-strip background-strip-${index}" style="background-image:url('${asset(name)}')"></div>`).join("")}
+              ${ATMOSPHERE_BACKGROUNDS.map((name, index) => `<div class="background-strip" style="top:${-index * 100}%;background-image:url('${asset(name)}')"></div>`).join("")}
             </div>
             <div class="launch-pad"></div>
             ${CLOUDS.map((cloud, index) => `
               <div class="cloud cloud-${index} ${cloud.front ? "front-cloud" : "back-cloud"}"><img src="${asset("clouds.png")}" alt="" /></div>
             `).join("")}
             <img class="big-moon" src="${asset("Moon.png")}" alt="" />
-            <div class="ufo" aria-hidden="true">
-              <img src="${asset("ufo_128.png")}" alt="" />
-            </div>
+            ${UFO_ENABLED ? `<div class="ufo" aria-hidden="true"><img src="${asset("ufo_128.png")}" alt="" /></div>` : ""}
           </div>
           <div class="rocket">
             <img class="rocket-art" src="${asset("Rocket_256.png")}" alt="" />
@@ -695,18 +694,6 @@ function updateUi() {
   const sky = root.querySelector(".sky");
   if (sky) {
     sky.dataset.segment = String(segment.index);
-    const backgrounds = ["Launchpad_Big.png", "troposphere.png", "stratosphere.png", "mesosphere.png", "thermosphere.png", "exosphere.png", "space.png"];
-    const atmosphere = sky.querySelector(".atmosphere-layer");
-    if (atmosphere) {
-      const nextBackground = segment.index <= 1 ? "none" : `url("${asset(backgrounds[segment.index] ?? "space.png")}")`;
-      if (atmosphere.dataset.segment !== String(segment.index)) {
-        atmosphere.dataset.segment = String(segment.index);
-        atmosphere.classList.remove("reveal");
-        void atmosphere.offsetWidth;
-        atmosphere.classList.add("reveal");
-      }
-      atmosphere.style.backgroundImage = nextBackground;
-    }
   }
 
   const timer = root.querySelector(".timer");
@@ -722,13 +709,13 @@ function updateUi() {
   });
 
   const world = root.querySelector(".world");
-  if (world) world.style.setProperty("--scroll", `${flightDistance * WORLD_SCROLL_PIXELS}px`);
+  if (world) world.style.setProperty("--scroll", `${getWorldScrollRatio() * getSkyHeight()}px`);
   const launchPad = root.querySelector(".launch-pad");
   if (launchPad) launchPad.style.backgroundImage = `url("${asset("Launchpad_Big.png")}")`;
 
   root.querySelectorAll(".cloud").forEach((cloud, index) => {
     const config = CLOUDS[index];
-    cloud.style.display = segment.index === 1 ? "none" : "block";
+    cloud.style.display = segment.index <= 1 ? "block" : "none";
     const drift = Math.sin((Date.now() / 9000 + config.delay) * Math.PI * 2) * 28;
     cloud.style.left = `${config.x * 100}%`;
     cloud.style.top = `${config.y * 100}%`;
@@ -817,10 +804,10 @@ function getCenterMessage(text) {
     if (!state.separationDone && getFuelRatio() <= 0.5) {
       return `<strong>${text.separationPrompt}</strong><span>${text.separationHint}</span>`;
     }
-    if (state.progress >= MOON_TRIGGER_PROGRESS * 0.72 && hasUfoClearedRocketForChallenge()) {
+    if (state.progress >= MOON_TRIGGER_PROGRESS * 0.92 && hasUfoClearedRocketForChallenge()) {
       return `<strong>${text.getReadyHold}</strong><span>${text.holdHint}</span>`;
     }
-    if (state.progress >= UFO_TRIGGER_PROGRESS) {
+    if (UFO_ENABLED && state.progress >= UFO_TRIGGER_PROGRESS) {
       return `<strong>${text.avoidUfo}</strong><span>${text.avoidUfoHint}</span>`;
     }
     return text.flying;
@@ -882,7 +869,7 @@ function getUfoState() {
     state.phase === "clapPrompt" ||
     state.phase === "landing" ||
     state.phase === "landed";
-  const visible = activePhase && state.progress >= UFO_TRIGGER_PROGRESS && viewportY < 1.32;
+  const visible = UFO_ENABLED && activePhase && state.progress >= UFO_TRIGGER_PROGRESS && viewportY < 1.32;
   const elapsed = state.ufoStartedAt > 0 ? Date.now() - state.ufoStartedAt : 0;
   const wave = Math.cos(elapsed / 5200);
   return {
@@ -937,6 +924,7 @@ function checkUfoCollision() {
 }
 
 function hasUfoClearedRocketForChallenge() {
+  if (!UFO_ENABLED) return true;
   const ufoEl = root.querySelector(".ufo");
   const rocketArt = root.querySelector(".rocket-art");
   if (!ufoEl || !rocketArt) return state.progress >= UFO_END_PROGRESS;

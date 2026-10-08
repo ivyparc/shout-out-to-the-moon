@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { BASE_ASPECT_RATIO } from "../constants/layout";
 import { clampDb, getDbRange, getDecayedDb, getFlameLevel, getRocketProgress } from "../game/db";
@@ -9,6 +9,15 @@ import { AppText } from "./AppText";
 import { MoonArt } from "./MoonArt";
 import { RocketArt } from "./RocketArt";
 import { TestDbControls } from "./TestDbControls";
+
+const BACKGROUNDS = [
+  require("../../public/assets/troposphere.png"),
+  require("../../public/assets/stratosphere.png"),
+  require("../../public/assets/mesosphere.png"),
+  require("../../public/assets/thermosphere.png"),
+  require("../../public/assets/exosphere.png"),
+  require("../../public/assets/space.png"),
+];
 
 type Props = {
   copy: GameCopy;
@@ -20,6 +29,7 @@ export function GameViewport({ copy }: Props) {
   const [currentDb, setCurrentDb] = useState(0);
   const [maxDb, setMaxDb] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [measuredSkyHeight, setMeasuredSkyHeight] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
   const progressRef = useRef(0);
   const dbRef = useRef(0);
@@ -126,18 +136,26 @@ export function GameViewport({ copy }: Props) {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  const rocketBottom = 136 + progress * (boardHeight - 270);
-  const cloudOffset = progress * 220;
+  const rocketBottom = 136;
+  const skyHeight = measuredSkyHeight || boardHeight - 168;
+  const worldOffset = progress * (BACKGROUNDS.length - 1) * skyHeight;
 
   return (
     <View style={[styles.board, { width: boardWidth, height: boardHeight }]}>
-      <View style={styles.sky}>
-        <View style={[styles.cloud, styles.cloudOne, { transform: [{ translateY: cloudOffset }] }]} />
-        <View style={[styles.cloud, styles.cloudTwo, { transform: [{ translateY: cloudOffset * 0.8 }] }]} />
-        <View style={[styles.cloud, styles.cloudThree, { transform: [{ translateY: cloudOffset * 1.1 }] }]} />
-        <View style={styles.moonPosition}>
-          <MoonArt />
+      <View style={styles.sky} onLayout={(event) => setMeasuredSkyHeight(event.nativeEvent.layout.height)}>
+        <View style={[StyleSheet.absoluteFill, { transform: [{ translateY: worldOffset }] }]} pointerEvents="none">
+          {BACKGROUNDS.map((source, index) => (
+            <Image
+              key={index}
+              source={source}
+              resizeMode="stretch"
+              style={{ position: "absolute", top: -index * skyHeight, width: boardWidth, height: skyHeight + 1 }}
+            />
+          ))}
         </View>
+        {progress >= 0.8 ? (
+          <View style={styles.moonPosition}><MoonArt /></View>
+        ) : null}
         {countdown > 0 ? (
           <AppText style={styles.countdown}>{countdown}</AppText>
         ) : (
@@ -174,6 +192,7 @@ const styles = StyleSheet.create({
   },
   sky: {
     flex: 1,
+    overflow: "hidden",
     backgroundColor: "#66a5ff",
   },
   moonPosition: {
@@ -201,27 +220,6 @@ const styles = StyleSheet.create({
   rocketPosition: {
     position: "absolute",
     alignSelf: "center",
-  },
-  cloud: {
-    position: "absolute",
-    width: 140,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.88)",
-  },
-  cloudOne: {
-    top: "19%",
-    left: "-9%",
-  },
-  cloudTwo: {
-    top: "47%",
-    right: "-8%",
-    width: 178,
-  },
-  cloudThree: {
-    bottom: "9%",
-    left: "7%",
-    width: 92,
   },
   meterBar: {
     height: 62,

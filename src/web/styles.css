@@ -64,36 +64,6 @@ select {
   transition: background 260ms ease;
 }
 
-.atmosphere-layer { display: none; }
-
-.sky[data-segment="0"] {
-  background: #9fc8e8;
-}
-
-.sky[data-segment="1"] {
-  background: #eaf5fb;
-}
-
-.sky[data-segment="2"] {
-  background: #dcecf7;
-}
-
-.sky[data-segment="3"] {
-  background: #ceddf0;
-}
-
-.sky[data-segment="4"] {
-  background: #bbc9e3;
-}
-
-.sky[data-segment="5"] {
-  background: #a9afd0;
-}
-
-.sky[data-segment="6"] {
-  background: #9297bb;
-}
-
 .hud {
   position: absolute;
   top: 8px;
@@ -180,14 +150,22 @@ select {
   transition: transform 80ms linear;
 }
 
-.background-track { position:absolute; inset:0; z-index:0; pointer-events:none; }
-.background-strip { position:absolute; left:0; right:0; height:100%; background-position:center; background-size:100% 100%; background-repeat:no-repeat; }
-.background-strip-0 { top:0; background:#9fc8e8 !important; background-image:none !important; }
-.background-strip-1 { top:100%; }
-.background-strip-2 { top:200%; }
-.background-strip-3 { top:300%; }
-.background-strip-4 { top:400%; }
-.background-strip-5 { top:500%; }
+.background-track {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.background-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(100% + 1px); /* Cover fractional-pixel seams while scrolling. */
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
 
 .launch-pad {
   position: absolute;
@@ -280,7 +258,7 @@ select {
 .flame {
   position: absolute;
   left: 50%;
-  bottom: -20px;
+  top: 124px;
   width: 104px;
   height: 104px;
   transform: translateX(-50%);
@@ -320,6 +298,7 @@ select {
   height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center top;
   opacity: 0;
 }
 

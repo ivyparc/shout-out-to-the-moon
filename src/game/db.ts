@@ -32,7 +32,7 @@ export function getRocketProgress(
     return Math.max(0, currentProgress - deltaMs * 0.000045);
   }
 
-  const speed = 0.000018 + db * 0.00000043;
+  const speed = 2 * (0.000018 + db * 0.00000043);
   return Math.min(1, currentProgress + speed * deltaMs);
 }
 
