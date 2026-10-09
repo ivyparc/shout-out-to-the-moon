@@ -4,12 +4,15 @@ const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
 const MOON_TRIGGER_PROGRESS = 0.94;
-const MOON_APPEAR_PROGRESS = 0.82;
+const MOON_REVEAL_DELAY_MS = 2000;
 // NASA: lowest to highest. Higher layers sit ABOVE the launch viewport.
 const ATMOSPHERE_BACKGROUNDS = [
   "troposphere.png", "stratosphere.png", "mesosphere.png",
   "thermosphere.png", "exosphere.png", "space.png",
 ];
+const ATMOSPHERE_STRIPS = ATMOSPHERE_BACKGROUNDS.flatMap((name) => name === "space.png" ? [name] : [name, name]);
+// Keep the moon at the same viewport position when the hold challenge begins.
+const MOON_APPEAR_PROGRESS = MOON_TRIGGER_PROGRESS - 0.6 / (ATMOSPHERE_STRIPS.length - 1);
 const FLIGHT_SPEED_FACTOR = 2;
 const UFO_ENABLED = false; // Temporary: retain encounter logic for later reactivation.
 const CLOUD_SCROLL_PIXELS = 360;
@@ -118,7 +121,10 @@ const STRINGS = {
     micStatus: "마이크를 허용하면 실제 소리로 플레이할 수 있습니다.",
     speechUnsupported: "Speech Recognition is not available in this browser.",
     voiceEnable: "Voice",
-    voiceReady: "Launch 음성 인식 대기 중",
+    voiceReady: "음성 인식 중 — Launch라고 말하세요",
+    voiceStarting: "음성 인식에 연결 중…",
+    voiceNetwork: "음성 인식 서비스 연결에 실패했습니다. 일반 Chrome/Safari에서 열고 Voice를 눌러 다시 시도하세요.",
+    voicePermission: "마이크·음성 인식 권한을 허용한 뒤 Voice를 눌러주세요.",
     voiceHeard: "인식",
     clapFailed: "박수 3번을 8초 안에 완료하지 못했습니다.",
     holdFailed: "50~60dB를 5초간 유지하지 못했습니다.",
@@ -157,7 +163,10 @@ const STRINGS = {
     micStatus: "Allow microphone access to play with real sound.",
     speechUnsupported: "Speech Recognition is not available in this browser.",
     voiceEnable: "Voice",
-    voiceReady: "Listening for Launch",
+    voiceReady: "Listening — say Launch",
+    voiceStarting: "Connecting to speech recognition…",
+    voiceNetwork: "Cannot connect to the speech service. Open in Chrome/Safari and press Voice to retry.",
+    voicePermission: "Allow microphone and speech recognition, then press Voice to retry.",
     voiceHeard: "Heard",
     clapFailed: "You did not clap 3 times within 8 seconds.",
     holdFailed: "You did not hold 50-60dB for 5 seconds.",
@@ -194,6 +203,7 @@ const state = {
   holdMs: 0,
   holdOutMs: 0,
   holdStartedAt: 0,
+  moonSceneStartScroll: 0,
   status: "",
   speechStatus: "",
   heardSpeech: "",
@@ -208,6 +218,10 @@ const state = {
 const speech = {
   recognition: null,
   isListening: false,
+  isStarting: false,
+  lastError: "",
+  networkFailures: 0,
+  retryDelay: 350,
   shouldListen: true,
   hasUserGesture: false,
   restartTimer: 0,
@@ -344,10 +358,31 @@ function getCurrentSegment() {
   return { name: "Moon", index: DISTANCE_SEGMENTS.length, start: TOTAL_DISTANCE_KM, end: TOTAL_DISTANCE_KM };
 }
 
+// Presentation only: gameplay distances, speed, rewards and timing are unchanged.
+// Approximate NASA layer boundaries; the last range approaches the Moon.
+const DISPLAY_ALTITUDE_BOUNDARIES_KM = [0, 12, 50, 80, 700, 10000, 384400];
+
+function getDisplayAltitudeKm(worldCoordinate) {
+  const coordinate = clamp(worldCoordinate, 0, ATMOSPHERE_STRIPS.length);
+  let start = 0;
+  for (let layer = 0; layer < ATMOSPHERE_BACKGROUNDS.length; layer += 1) {
+    const count = ATMOSPHERE_STRIPS.filter((name) => name === ATMOSPHERE_BACKGROUNDS[layer]).length;
+    const end = start + count;
+    if (coordinate <= end) {
+      const fraction = (coordinate - start) / count;
+      const low = DISPLAY_ALTITUDE_BOUNDARIES_KM[layer];
+      const high = DISPLAY_ALTITUDE_BOUNDARIES_KM[layer + 1];
+      return low + (high - low) * fraction;
+    }
+    start = end;
+  }
+  return DISPLAY_ALTITUDE_BOUNDARIES_KM.at(-1);
+}
+
 function getDistanceMarker(index) {
-  if (state.distanceKm < 100) return (index + 1) * 100;
-  const center = Math.max(100, Math.round(state.distanceKm / 100) * 100);
-  return Math.max(0, center + (index - 1) * 100);
+  // Existing markers run from 19% to 80% down the viewport, lowest first.
+  const viewportY = 0.8 - index * 0.305;
+  return getDisplayAltitudeKm(getWorldScrollRatio() + 1 - viewportY);
 }
 
 function flameLevel(db) {
@@ -383,6 +418,7 @@ function startGame() {
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
+  state.moonSceneStartScroll = 0;
   state.distanceKm = 0;
   state.fuelRemaining = state.fuelCapacity;
   state.lastEarnedCoins = 0;
@@ -434,6 +470,7 @@ function beginHoldChallenge() {
   state.holdMs = 0;
   state.holdOutMs = 0;
   state.holdStartedAt = Date.now();
+  state.moonSceneStartScroll = getWorldScrollRatio();
   state.ufoExitStartedAt = Date.now();
   state.manualModeUntil = 0;
   state.status = "";
@@ -486,6 +523,7 @@ function reset() {
   state.db = 0;
   state.maxDb = 0;
   state.progress = 0;
+  state.moonSceneStartScroll = 0;
   state.distanceKm = 0;
   state.fuelRemaining = state.fuelCapacity;
   state.lastEarnedCoins = 0;
@@ -514,6 +552,10 @@ function reset() {
 function setMeasuredDb(value) {
   if (!canAcceptDb()) return;
   state.db = clampDb(value);
+  if (state.phase === "holdPrompt" && (state.db < HOLD_TARGET_MIN || state.db > HOLD_TARGET_MAX)) {
+    // Reset on every sample, including brief excursions between game ticks.
+    state.holdMs = 0;
+  }
   state.maxDb = Math.max(state.maxDb, state.db);
   updateUi();
 }
@@ -586,7 +628,16 @@ function getSkyHeight() {
 }
 
 function getWorldScrollRatio(progress = state.progress) {
-  return clamp(progress, 0, 1) * (ATMOSPHERE_BACKGROUNDS.length - 1);
+  return clamp(progress, 0, 1) * (ATMOSPHERE_STRIPS.length - 1);
+}
+
+function getSceneWorldScrollRatio() {
+  const flightScroll = getWorldScrollRatio();
+  if (state.phase !== "holdPrompt" && state.phase !== "clapPrompt") return flightScroll;
+  // Finish the visual transition into space while gameplay distance is paused.
+  const fraction = clamp((Date.now() - state.holdStartedAt) / MOON_REVEAL_DELAY_MS, 0, 1);
+  const spaceScroll = ATMOSPHERE_STRIPS.length - 1;
+  return Math.max(flightScroll, state.moonSceneStartScroll + (spaceScroll - state.moonSceneStartScroll) * fraction);
 }
 
 function getWorldAnchoredViewportY(startProgress, startViewportY) {
@@ -624,7 +675,7 @@ function render() {
           </div>
           <div class="world">
             <div class="background-track" aria-hidden="true">
-              ${ATMOSPHERE_BACKGROUNDS.map((name, index) => `<div class="background-strip" style="top:${-index * 100}%;background-image:url('${asset(name)}')"></div>`).join("")}
+              ${ATMOSPHERE_STRIPS.map((name, index) => `<div class="background-strip" style="top:${-index * 100}%;background-image:url('${asset(name)}')"></div>`).join("")}
             </div>
             <div class="launch-pad"></div>
             ${CLOUDS.map((cloud, index) => `
@@ -668,13 +719,6 @@ function render() {
           <option value="en" ${state.language === "en" ? "selected" : ""}>English</option>
           <option value="ko" ${state.language === "ko" ? "selected" : ""}>Korean</option>
         </select>
-        <div class="buttons">
-          ${DB_RANGES.map((item) => `
-            <button type="button" data-range-id="${item.id}" data-min="${item.min}" data-max="${item.max}">
-              <span>${item.label[0]}</span><span>${item.label[1]}</span>
-            </button>
-          `).join("")}
-        </div>
         <p></p>
       </footer>
     </main>
@@ -709,7 +753,7 @@ function updateUi() {
   });
 
   const world = root.querySelector(".world");
-  if (world) world.style.setProperty("--scroll", `${getWorldScrollRatio() * getSkyHeight()}px`);
+  if (world) world.style.setProperty("--scroll", `${getSceneWorldScrollRatio() * getSkyHeight()}px`);
   const launchPad = root.querySelector(".launch-pad");
   if (launchPad) launchPad.style.backgroundImage = `url("${asset("Launchpad_Big.png")}")`;
 
@@ -885,11 +929,14 @@ function getMoonState() {
   const activePhase = state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "holdPrompt";
   const position = getWorldAnchoredViewportY(MOON_APPEAR_PROGRESS, -0.22);
   const viewportY = position.viewportY;
-  const visible = activePhase && state.progress >= MOON_APPEAR_PROGRESS && viewportY < 1.05;
+  const revealReady = (state.phase === "holdPrompt" || state.phase === "clapPrompt") &&
+    Date.now() - state.holdStartedAt >= MOON_REVEAL_DELAY_MS;
+  const visible = activePhase && revealReady && state.progress >= MOON_APPEAR_PROGRESS && viewportY < 1.05;
   const fadeIn = clamp((viewportY + 0.2) / 0.12, 0, 1);
   return {
     visible,
-    y: position.worldY,
+    // Keep the moon's screen position while the satellite background clears.
+    y: position.worldY - (getSceneWorldScrollRatio() - getWorldScrollRatio()),
     viewportY,
     opacity: fadeIn,
   };
@@ -974,10 +1021,13 @@ function updateGame(delta) {
     if (state.db >= HOLD_TARGET_MIN && state.db <= HOLD_TARGET_MAX) {
       state.holdMs += delta;
       state.holdOutMs = 0;
-    } else if (Date.now() - state.holdStartedAt < HOLD_START_GRACE_MS) {
-      state.holdOutMs = 0;
     } else {
-      state.holdOutMs += delta;
+      state.holdMs = 0;
+      if (Date.now() - state.holdStartedAt < HOLD_START_GRACE_MS) {
+        state.holdOutMs = 0;
+      } else {
+        state.holdOutMs += delta;
+      }
     }
     if (state.holdOutMs > HOLD_FAIL_GRACE_MS) {
       failGame(text.holdFailed);
@@ -993,7 +1043,6 @@ function updateGame(delta) {
 
 root.addEventListener("pointerdown", (event) => {
   speech.hasUserGesture = true;
-  startVoiceInput({ fromUserGesture: true });
   const target = event.target.closest("button");
   if (!target) return;
   if (handleButtonAction(target)) {
@@ -1086,11 +1135,13 @@ function scheduleSpeechRestart(delay = 700) {
 function stopSpeechRecognition() {
   speech.shouldListen = false;
   window.clearTimeout(speech.restartTimer);
-  if (!speech.recognition || !speech.isListening) return;
+  state.speechStatus = "";
+  if (!speech.recognition || (!speech.isListening && !speech.isStarting)) return;
   try {
-    speech.recognition.stop();
+    speech.recognition.abort();
   } catch {
-    // Some browsers throw if recognition is already stopping.
+    speech.isStarting = false;
+    speech.isListening = false;
   }
 }
 
@@ -1103,64 +1154,99 @@ function createSpeechRecognition() {
   recognition.maxAlternatives = 5;
   recognition.lang = "en-US";
 
+  recognition.onstart = () => {
+    speech.isStarting = false;
+    if (!speech.shouldListen) {
+      recognition.abort();
+      return;
+    }
+    speech.isListening = true;
+    // start() only requests a session; onstart confirms that it actually began.
+    if (!speech.lastError) state.speechStatus = STRINGS[state.language].voiceReady;
+    updateUi();
+  };
+
   recognition.onresult = (event) => {
-    const transcript = readSpeechTranscript(event);
-    handleSpeechTranscript(transcript);
+    if (!speech.shouldListen || !speech.isListening) return;
+    speech.lastError = "";
+    speech.networkFailures = 0;
+    state.speechStatus = STRINGS[state.language].voiceReady;
+    handleSpeechTranscript(readSpeechTranscript(event));
   };
 
   recognition.onerror = (event) => {
-    speech.isListening = false;
+    speech.lastError = event.error;
+    const text = STRINGS[state.language];
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-      state.speechStatus = "Speech recognition permission was denied.";
+      state.speechStatus = text.voicePermission;
+      speech.shouldListen = false;
+    } else if (event.error === "network") {
+      speech.networkFailures += 1;
+      state.speechStatus = text.voiceNetwork;
+      speech.retryDelay = 1500 * speech.networkFailures;
+      if (speech.networkFailures >= 3) speech.shouldListen = false;
+    } else if (event.error === "audio-capture") {
+      state.speechStatus = "Speech recognition cannot access the microphone. Press Voice to retry.";
       speech.shouldListen = false;
     } else if (event.error === "no-speech") {
-      state.speechStatus = STRINGS[state.language].voiceReady;
-      scheduleSpeechRestart(250);
-    } else if (event.error === "audio-capture") {
-      state.speechStatus = "Speech recognition cannot access the microphone.";
-      scheduleSpeechRestart(1000);
+      speech.lastError = "";
+      state.speechStatus = text.voiceStarting;
+      speech.retryDelay = 350;
     } else if (event.error !== "aborted") {
       state.speechStatus = `Speech recognition error: ${event.error}`;
-      scheduleSpeechRestart(1000);
+      speech.shouldListen = false;
     }
+    // Restart only after onend: an error does not mean the session has ended.
     updateUi();
   };
 
   recognition.onend = () => {
     speech.isListening = false;
-    scheduleSpeechRestart(speech.hasUserGesture ? 350 : 1200);
+    speech.isStarting = false;
+    if (speech.shouldListen && !speech.lastError) {
+      state.speechStatus = STRINGS[state.language].voiceStarting;
+    }
+    scheduleSpeechRestart(speech.retryDelay);
+    updateUi();
   };
   return recognition;
 }
 
 function startSpeechRecognition(options = {}) {
   const text = STRINGS[state.language];
-  if (options.fromUserGesture) speech.hasUserGesture = true;
+  if (options.fromUserGesture) {
+    speech.hasUserGesture = true;
+    speech.shouldListen = true;
+    speech.lastError = "";
+    speech.networkFailures = 0;
+    speech.retryDelay = 350;
+  }
   if (!speech.shouldListen && !options.force) return;
   if (
     state.phase !== "waitingLaunch" &&
     state.phase !== "separationPrompt" &&
     state.phase !== "replayPrompt" &&
     state.phase !== "failed"
-  ) {
-    return;
-  }
+  ) return;
+  if (speech.isListening || speech.isStarting) return;
+  window.clearTimeout(speech.restartTimer);
   speech.shouldListen = true;
   if (!speech.recognition) speech.recognition = createSpeechRecognition();
   if (!speech.recognition) {
     state.speechStatus = text.speechUnsupported;
+    speech.shouldListen = false;
     updateUi();
     return;
   }
-  if (speech.isListening) return;
   try {
+    speech.isStarting = true;
+    if (!speech.lastError) state.speechStatus = text.voiceStarting;
     speech.recognition.start();
-    speech.isListening = true;
-    state.speechStatus = text.voiceReady;
   } catch (error) {
+    speech.isStarting = false;
     speech.isListening = false;
-    state.speechStatus = error instanceof Error ? error.message : "Speech recognition could not start.";
-    scheduleSpeechRestart(speech.hasUserGesture ? 700 : 1500);
+    speech.shouldListen = false;
+    state.speechStatus = error instanceof Error ? error.message : "Speech recognition could not start. Press Voice to retry.";
   } finally {
     updateUi();
   }
@@ -1190,6 +1276,7 @@ async function startMeter() {
     const audioContext = new AudioContextClass();
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
+    if (state.status === STRINGS[state.language].micStatus) state.status = "";
     analyser.fftSize = 1024;
     source.connect(analyser);
     const samples = new Uint8Array(analyser.fftSize);

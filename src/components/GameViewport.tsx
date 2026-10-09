@@ -19,6 +19,10 @@ const BACKGROUNDS = [
   require("../../public/assets/space.png"),
 ];
 
+const BACKGROUND_STRIPS = BACKGROUNDS.flatMap((source, index) =>
+  index === BACKGROUNDS.length - 1 ? [source] : [source, source],
+);
+
 type Props = {
   copy: GameCopy;
 };
@@ -138,13 +142,13 @@ export function GameViewport({ copy }: Props) {
 
   const rocketBottom = 136;
   const skyHeight = measuredSkyHeight || boardHeight - 168;
-  const worldOffset = progress * (BACKGROUNDS.length - 1) * skyHeight;
+  const worldOffset = progress * (BACKGROUND_STRIPS.length - 1) * skyHeight;
 
   return (
     <View style={[styles.board, { width: boardWidth, height: boardHeight }]}>
       <View style={styles.sky} onLayout={(event) => setMeasuredSkyHeight(event.nativeEvent.layout.height)}>
         <View style={[StyleSheet.absoluteFill, { transform: [{ translateY: worldOffset }] }]} pointerEvents="none">
-          {BACKGROUNDS.map((source, index) => (
+          {BACKGROUND_STRIPS.map((source, index) => (
             <Image
               key={index}
               source={source}
