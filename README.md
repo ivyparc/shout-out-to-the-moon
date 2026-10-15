@@ -24,13 +24,31 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 
 1. Say `Launch` to start.
 2. The current dB moves the rocket while the rocket remains visually centered.
-3. Higher dB means faster scrolling movement and a stronger flame. Flight speed is twice the previous speed for the same dB and upgrade level.
+3. Higher dB means stronger thrust and flame, with an upper thrust limit so loud inputs cannot bypass the upgrade progression.
 4. Ascend through troposphere, stratosphere, mesosphere, thermosphere, exosphere, then space. The joined backgrounds scroll downward; UFO encounters are temporarily disabled.
 5. Hold `50-60 dB` for 5 seconds when prompted.
 6. Clap 3 times when prompted near the moon.
 7. Land on the moon, then say `Replay` or tap the replay control to restart.
 8. Current dB, max dB, and the energy bar are shown during play.
 9. Test controls generate dB/clap/launch inputs for development.
+
+## Upgrade progression
+
+A fresh save targets its first landing in about 9–10 runs when the player flies at
+40–80 dB, completes separation/hold/clap prompts, and spends earnings on engine
+and fuel upgrades alternately. Starting with either engine or fuel is supported.
+Quieter flight, failed challenges, saving coins, or buying only money upgrades can
+require more runs. There is no fixed attempt-count unlock.
+
+- Engine and fuel start at 10. Each purchase adds 1 and costs `60 + 10 × purchased levels` for that stat.
+- Fuel burns at 0.15 units/second. Engine upgrades supply the main increase in flight speed; loudness has diminishing returns.
+- A failed flight earns `floor((31 + 60 × distance progress) × money multiplier)` coins if it traveled any distance.
+- A successful landing earns `floor(121 × money multiplier)` coins, including a landing bonus. Every run settles once.
+- Money upgrades add 0.1; they start at 50 coins and increase in price by 25 each time.
+- Purchases are available between runs. Existing coins and upgrades are preserved; upgraded saves may reach the Moon sooner.
+- UFO encounters remain disabled. The continuous five-second hold and three-clap challenges remain required.
+
+Run the progression and gameplay regressions with `node --test tests/*.test.cjs`.
 
 ## Permissions
 

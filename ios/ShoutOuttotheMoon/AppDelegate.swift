@@ -993,28 +993,15 @@ const DEFAULT_STATS = {
   coins: 0,
 };
 
-const UPGRADE_COSTS = {
-  speed: [
-    { min: 10, max: 20, cost: 50 },
-    { min: 21, max: 30, cost: 100 },
-    { min: 31, max: 40, cost: 150 },
-    { min: 41, max: 50, cost: 200 },
-    { min: 51, max: Infinity, cost: 250 },
-  ],
-  fuel: [
-    { min: 10, max: 20, cost: 50 },
-    { min: 21, max: 30, cost: 100 },
-    { min: 31, max: 40, cost: 150 },
-    { min: 41, max: 50, cost: 200 },
-    { min: 51, max: Infinity, cost: 250 },
-  ],
-  money: [
-    { min: 1, max: 2, cost: 50 },
-    { min: 2.1, max: 3, cost: 100 },
-    { min: 3.1, max: 4, cost: 150 },
-    { min: 4.1, max: 5, cost: 200 },
-    { min: 5.1, max: Infinity, cost: 250 },
-  ],
+// A fresh save targets its first landing after 8-9 engine/fuel purchases.
+const BALANCE = {
+  speedPerEnginePoint: 7.9,
+  fuelBurnPerSecond: 0.15,
+  upgradeBaseCost: 60,
+  upgradeCostPerLevel: 10,
+  runBaseCoins: 31,
+  runProgressCoins: 60,
+  landingBonusCoins: 30,
 };
 
 const DISTANCE_SEGMENTS = [
@@ -1266,7 +1253,10 @@ function formatStat(value) {
 }
 
 function currentSpeedKms() {
-  return FLIGHT_SPEED_FACTOR * Math.round(0.012 * state.db * state.db * state.speedMultiplier);
+  // Loudness helps, but shouting cannot bypass the upgrade progression.
+  const db = clamp(state.db, 0, 110);
+  const thrust = db < 40 ? (db / 40) * 0.95 : clamp(db / 55, 0.95, 1.01);
+  return Math.round(FLIGHT_SPEED_FACTOR * BALANCE.speedPerEnginePoint * state.speedMultiplier * thrust);
 }
 
 function getFuelRatio() {
@@ -1278,11 +1268,14 @@ function syncProgressFromDistance() {
 }
 
 function upgradeCost(type) {
-  const value =
-    type === "speed" ? state.speedMultiplier : type === "fuel" ? state.fuelCapacity : state.moneyMultiplier;
-  const table = UPGRADE_COSTS[type] ?? [];
-  const fallback = table.length > 0 ? table[table.length - 1].cost : 0;
-  return table.find((entry) => value >= entry.min && value <= entry.max)?.cost ?? fallback;
+  if (type === "money") {
+    const level = Math.round((state.moneyMultiplier - DEFAULT_STATS.money) * 10);
+    return 50 + Math.max(0, level) * 25;
+  }
+  if (type !== "speed" && type !== "fuel") return Infinity;
+  const value = type === "speed" ? state.speedMultiplier : state.fuelCapacity;
+  const level = Math.max(0, value - DEFAULT_STATS[type]);
+  return BALANCE.upgradeBaseCost + level * BALANCE.upgradeCostPerLevel;
 }
 
 function nextUpgradeValue(type) {
@@ -1292,6 +1285,7 @@ function nextUpgradeValue(type) {
 }
 
 function applyUpgrade(type) {
+  if (isRunningPhase() || state.phase === "landing") return false;
   const cost = upgradeCost(type);
   if (state.coins < cost) return false;
   state.coins -= cost;
@@ -1451,6 +1445,7 @@ function beginLanding() {
 }
 
 function completeLanding() {
+  settleRun(true);
   state.phase = "landed";
   updateUi();
   window.setTimeout(() => {
@@ -1462,13 +1457,19 @@ function completeLanding() {
   }, 1700);
 }
 
+function settleRun(landed = false) {
+  if (state.hasSettledRun) return;
+  const progress = landed ? 1 : clamp(state.distanceKm / TOTAL_DISTANCE_KM, 0, 1);
+  const base = state.distanceKm > 0 ? BALANCE.runBaseCoins + BALANCE.runProgressCoins * progress : 0;
+  const bonus = landed ? BALANCE.landingBonusCoins : 0;
+  state.lastEarnedCoins = Math.max(0, Math.floor((base + bonus) * state.moneyMultiplier));
+  state.coins += state.lastEarnedCoins;
+  state.hasSettledRun = true;
+  saveEconomy();
+}
+
 function failGame(message) {
-  if (!state.hasSettledRun) {
-    state.lastEarnedCoins = Math.max(0, Math.floor((state.distanceKm / 100) * state.moneyMultiplier));
-    state.coins += state.lastEarnedCoins;
-    state.hasSettledRun = true;
-    saveEconomy();
-  }
+  settleRun();
   state.phase = "failed";
   state.status = message;
   speech.shouldListen = true;
@@ -1773,6 +1774,10 @@ function updateUi() {
     centerMessage.innerHTML = getCenterMessage(text);
   }
 
+  root.querySelectorAll(".stats-row button").forEach((button) => {
+    button.disabled = isRunningPhase() || state.phase === "landing";
+  });
+
   const stats = root.querySelectorAll(".stats-row button strong");
   if (stats[0]) stats[0].textContent = `X ${formatStat(state.speedMultiplier)}`;
   if (stats[1]) stats[1].textContent = `${formatStat(state.fuelCapacity)} t`;
@@ -1941,9 +1946,7 @@ function hasUfoClearedRocketForChallenge() {
 function updateGame(delta) {
   const text = STRINGS[state.language];
   if (isRunningPhase()) {
-    // Fuel is a generous flight resource; loud inputs can move hundreds of km/s
-    // without ending the run after only a few seconds.
-    state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * 0.15);
+    state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * BALANCE.fuelBurnPerSecond);
     if (state.fuelRemaining <= 0) {
       failGame(text.energyFailed);
       return;
@@ -1951,14 +1954,10 @@ function updateGame(delta) {
   }
 
   if (isDistancePhase()) {
-    state.distanceKm = Math.min(TOTAL_DISTANCE_KM, state.distanceKm + currentSpeedKms() * (delta / 1000));
+    state.distanceKm = Math.min(TOTAL_DISTANCE_KM * MOON_TRIGGER_PROGRESS, state.distanceKm + currentSpeedKms() * (delta / 1000));
     syncProgressFromDistance();
     checkUfoCollision();
     if (!isDistancePhase()) return;
-    if (state.distanceKm >= TOTAL_DISTANCE_KM) {
-      beginLanding();
-      return;
-    }
   }
 
   if (state.phase === "flying") {
