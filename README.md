@@ -9,6 +9,7 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 - Tablet and desktop layouts scale the game board responsively.
 - Main game text uses `allowFontScaling={false}` through `AppText`.
 - The iOS TestFlight build uses a native `WKWebView` shell generated from the web game source.
+- The native iOS shell builds without CocoaPods or Expo native modules; the workspace contains only the app project.
 - App language is selected from the device language on first launch:
   - `ko` -> Korean
   - `en` -> English
@@ -34,19 +35,20 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 
 ## Upgrade progression
 
-A fresh save targets its first landing in about 9–10 runs when the player flies at
-40–80 dB, completes separation/hold/clap prompts, and spends earnings on engine
-and fuel upgrades alternately. Starting with either engine or fuel is supported.
-Quieter flight, failed challenges, saving coins, or buying only money upgrades can
-require more runs. There is no fixed attempt-count unlock.
+A fresh save reaches the Moon in 9–10 runs at a steady 65–75 dB when the player
+completes separation/hold/clap prompts and buys engine and fuel upgrades alternately.
+Either purchase order is supported. 65–70 dB lands on run 10; 75 dB lands on run 9. At 55 dB it takes 13 runs. Louder voices arrive sooner;
+quieter voices or failed challenges take longer. There is no attempt-count unlock.
 
-- Engine and fuel start at 10. Each purchase adds 1 and costs `60 + 10 × purchased levels` for that stat.
-- Fuel burns at 0.15 units/second. Engine upgrades supply the main increase in flight speed; loudness has diminishing returns.
-- A failed flight earns `floor((31 + 60 × distance progress) × money multiplier)` coins if it traveled any distance.
-- A successful landing earns `floor(121 × money multiplier)` coins, including a landing bonus. Every run settles once.
-- Money upgrades add 0.1; they start at 50 coins and increase in price by 25 each time.
-- Purchases are available between runs. Existing coins and upgrades are preserved; upgraded saves may reach the Moon sooner.
-- UFO encounters remain disabled. The continuous five-second hold and three-clap challenges remain required.
+- Speed is exactly `dB × Speed` km/s (58 dB × 10 = 580 km/s).
+- Fuel burns at 1 t/second in every active phase, independent of sound or speed. Default 10 t lasts 10 seconds, including challenges.
+- Every run pays `floor(distance / 100 × Money)` once, without base or landing bonuses.
+- Engine/fuel purchases add 1. Current-stat bands 10–20 / 21–30 / 31–40 / 41–50 / 51+ cost 50 / 100 / 150 / 200 / 250 coins. Fuel 22 → 23 costs 100 coins.
+- Money purchases add 0.1. Current-stat bands 1–2 / 2.1–3 / 3.1–4 / 4.1–5 / above 5 use the same five costs. The overlapping 5 boundary belongs to the explicit 4.1–5 band.
+- Costs and gameplay distances come from the [SOTM source sheet](https://docs.google.com/spreadsheets/d/1Z7Bft-n0MNSQMPITQEgAo0O_mGSvueM2QRrhg_HDNoA/edit), snapshot imported 2026-10-15. Source ranges: `dB - Speed!A2:F9`, `Atmospheric Layers!A3:D10`. Game distances total 19,500 and backgrounds follow those boundaries. Left markers use the sheet’s reference altitudes (12 / 50 / 85 / 600 / 10,000 km), then the Moon’s average 384,400 km; those labels are not reward distances. This is a bundled snapshot, not a live Google Sheets connection.
+- Downward foreground streaks respond immediately to speed, independently of the economy and fuel clock. Each atmosphere image appears twice; space once.
+- Purchases are available between runs. Existing saved upgrades/coins are preserved.
+- UFOs remain disabled; continuous five-second hold and three claps remain required.
 
 Run the progression and gameplay regressions with `node --test tests/*.test.cjs`.
 
@@ -98,7 +100,7 @@ open ios/ShoutOuttotheMoon.xcworkspace
 ```
 
 5. In Xcode, confirm `ios/ShoutOuttotheMoon/AppDelegate.swift` contains `WKWebView` and `gameHTML`.
-6. In Xcode Build Phases, confirm `Bundle React Native code and images` is not present.
+6. In Xcode Build Phases, confirm React Native, Expo configuration, and CocoaPods script phases are not present. In Signing & Capabilities, use automatic signing with team `GWBS3Q4W36`; its Apple Developer account must be signed in under Xcode Settings -> Accounts.
 7. Archive and upload the new build number to TestFlight.
 8. On the device, confirm the installed TestFlight app shows the new build number if a startup diagnostic appears.
 

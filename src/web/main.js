@@ -3,7 +3,7 @@ const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
-const MOON_TRIGGER_PROGRESS = 0.94;
+const MOON_TRIGGER_PROGRESS = 1;
 const MOON_REVEAL_DELAY_MS = 2000;
 // NASA: lowest to highest. Higher layers sit ABOVE the launch viewport.
 const ATMOSPHERE_BACKGROUNDS = [
@@ -13,7 +13,6 @@ const ATMOSPHERE_BACKGROUNDS = [
 const ATMOSPHERE_STRIPS = ATMOSPHERE_BACKGROUNDS.flatMap((name) => name === "space.png" ? [name] : [name, name]);
 // Keep the moon at the same viewport position when the hold challenge begins.
 const MOON_APPEAR_PROGRESS = MOON_TRIGGER_PROGRESS - 0.6 / (ATMOSPHERE_STRIPS.length - 1);
-const FLIGHT_SPEED_FACTOR = 2;
 const UFO_ENABLED = false; // Temporary: retain encounter logic for later reactivation.
 const CLOUD_SCROLL_PIXELS = 360;
 const CLAP_WINDOW_MS = 8000;
@@ -35,16 +34,17 @@ const DEFAULT_STATS = {
   coins: 0,
 };
 
-// A fresh save targets its first landing after 8-9 engine/fuel purchases.
-const BALANCE = {
-  speedPerEnginePoint: 7.9,
-  fuelBurnPerSecond: 0.15,
-  upgradeBaseCost: 60,
-  upgradeCostPerLevel: 10,
-  runBaseCoins: 31,
-  runProgressCoins: 60,
-  landingBonusCoins: 30,
-};
+// Source: SOTM, "dB - Speed"!A2:F9 and "Atmospheric Layers"!A3:D10.
+// https://docs.google.com/spreadsheets/d/1Z7Bft-n0MNSQMPITQEgAo0O_mGSvueM2QRrhg_HDNoA/edit
+// Snapshot imported 2026-10-15; costs use the current stat before purchase.
+const BALANCE = { fuelBurnPerSecond: 1 };
+const UPGRADE_COST_TIERS = [
+  { max: 20, cost: 50 },
+  { max: 30, cost: 100 },
+  { max: 40, cost: 150 },
+  { max: 50, cost: 200 },
+  { max: Infinity, cost: 250 },
+];
 
 const DISTANCE_SEGMENTS = [
   { name: "Launch Pad", distance: 1000 },
@@ -180,6 +180,8 @@ const state = {
   coins: DEFAULT_STATS.coins,
   lastEarnedCoins: 0,
   hasSettledRun: false,
+  tryCount: 0,
+  flightHistory: [],
   separationDone: false,
   lastTick: Date.now(),
   manualModeUntil: 0,
@@ -250,6 +252,7 @@ function loadEconomy() {
   state.fuelCapacity = storedFuel < DEFAULT_STATS.fuel ? DEFAULT_STATS.fuel : storedFuel;
   state.moneyMultiplier = storedMoney < DEFAULT_STATS.money ? DEFAULT_STATS.money : storedMoney;
   state.coins = Math.max(0, readStoredNumber("stats.coins", DEFAULT_STATS.coins));
+  loadFlightHistory();
   saveEconomy();
   state.fuelRemaining = state.fuelCapacity;
 }
@@ -259,6 +262,52 @@ function saveEconomy() {
   writeStoredValue("stats.fuel", String(state.fuelCapacity));
   writeStoredValue("stats.money", String(state.moneyMultiplier));
   writeStoredValue("stats.coins", String(state.coins));
+}
+
+function loadFlightHistory() {
+  try {
+    const saved = JSON.parse(readStoredValue("flight.history.v1") || "null");
+    if (!saved || !Array.isArray(saved.runs)) return;
+    state.flightHistory = saved.runs.filter((run) => Number.isInteger(run.try) && run.try > 0 &&
+      Number.isFinite(run.distance) && run.distance >= 0 && run.distance <= TOTAL_DISTANCE_KM);
+    state.tryCount = Math.max(0, Number.isSafeInteger(saved.tryCount) ? saved.tryCount : 0,
+      ...state.flightHistory.map((run) => run.try));
+  } catch { /* Keep playing if a saved record is unavailable. */ }
+}
+
+function saveFlightHistory() {
+  writeStoredValue("flight.history.v1", JSON.stringify({tryCount: state.tryCount, runs: state.flightHistory}));
+}
+
+function bestFlight() {
+  return state.flightHistory.reduce((best, run) => !best || run.distance > best.distance ? run : best, null);
+}
+
+function flightMarkerY(distance) {
+  // Align a past endpoint with the rocket when this run reaches that distance.
+  const sky = root.querySelector(".sky");
+  const rocket = root.querySelector(".rocket-art");
+  let anchor = 0.65;
+  if (sky && rocket) {
+    const skyRect = sky.getBoundingClientRect();
+    const rect = rocket.getBoundingClientRect();
+    if (skyRect.height) anchor = (rect.top + rect.height / 2 - skyRect.top) / skyRect.height;
+  }
+  // The final space image is stationary; retain distinct height markers there.
+  const spaceLength = DISTANCE_SEGMENTS.at(-1).distance;
+  const coordinate = (km) => getWorldScrollRatio(km / TOTAL_DISTANCE_KM) +
+    clamp((km - (TOTAL_DISTANCE_KM - spaceLength)) / spaceLength, 0, 1);
+  return anchor + coordinate(state.distanceKm) - coordinate(distance);
+}
+
+function renderFlightMarkers() {
+  const best = bestFlight();
+  const markers = root.querySelector(".flight-markers");
+  const map = root.querySelector(".history-map");
+  if (markers) markers.innerHTML = state.flightHistory.filter(run => run.distance > 0).map(run =>
+    `<div class="flight-marker ${run === best ? "best" : ""}" data-distance="${run.distance}"><i></i><span>${run === best ? "Best " : ""}T${run.try}</span></div>`).join("");
+  if (map) map.innerHTML = state.flightHistory.filter(run => run.distance > 0).map(run =>
+    `<i class="history-dot ${run === best ? "best" : ""}" style="bottom:calc(${run.distance / TOTAL_DISTANCE_KM * 100}% - ${run.distance / TOTAL_DISTANCE_KM * 24}px)" title="${run === best ? "Best · " : ""}T${run.try}"></i>`).join("");
 }
 
 function getLanguage() {
@@ -295,10 +344,7 @@ function formatStat(value) {
 }
 
 function currentSpeedKms() {
-  // Loudness helps, but shouting cannot bypass the upgrade progression.
-  const db = clamp(state.db, 0, 110);
-  const thrust = db < 40 ? (db / 40) * 0.95 : clamp(db / 55, 0.95, 1.01);
-  return Math.round(FLIGHT_SPEED_FACTOR * BALANCE.speedPerEnginePoint * state.speedMultiplier * thrust);
+  return clamp(state.db, 0, 110) * state.speedMultiplier;
 }
 
 function getFuelRatio() {
@@ -310,14 +356,11 @@ function syncProgressFromDistance() {
 }
 
 function upgradeCost(type) {
-  if (type === "money") {
-    const level = Math.round((state.moneyMultiplier - DEFAULT_STATS.money) * 10);
-    return 50 + Math.max(0, level) * 25;
-  }
-  if (type !== "speed" && type !== "fuel") return Infinity;
-  const value = type === "speed" ? state.speedMultiplier : state.fuelCapacity;
-  const level = Math.max(0, value - DEFAULT_STATS[type]);
-  return BALANCE.upgradeBaseCost + level * BALANCE.upgradeCostPerLevel;
+  if (!["speed", "fuel", "money"].includes(type)) return Infinity;
+  // Money's 1–2 / 2.1–3 bands use the same table in tenths.
+  const value = type === "money" ? Math.round(state.moneyMultiplier * 10)
+    : type === "speed" ? state.speedMultiplier : state.fuelCapacity;
+  return UPGRADE_COST_TIERS.find((tier) => value <= tier.max).cost;
 }
 
 function nextUpgradeValue(type) {
@@ -354,7 +397,7 @@ function getCurrentSegment() {
 
 // Presentation only: gameplay distances, speed, rewards and timing are unchanged.
 // Approximate NASA layer boundaries; the last range approaches the Moon.
-const DISPLAY_ALTITUDE_BOUNDARIES_KM = [0, 12, 50, 80, 700, 10000, 384400];
+const DISPLAY_ALTITUDE_BOUNDARIES_KM = [0, 12, 50, 85, 600, 10000, 384400];
 
 function getDisplayAltitudeKm(worldCoordinate) {
   const coordinate = clamp(worldCoordinate, 0, ATMOSPHERE_STRIPS.length);
@@ -380,11 +423,7 @@ function getDistanceMarker(index) {
 }
 
 function flameLevel(db) {
-  if (db < 40) return 1;
-  if (db < 60) return 2;
-  if (db < 80) return 3;
-  if (db < 100) return 4;
-  return 5;
+  return Math.min(5, 1 + Math.floor(clamp(db, 0, 110) / 25));
 }
 
 function isRunningPhase() {
@@ -408,6 +447,8 @@ function startGame() {
   if (state.phase !== "waitingLaunch") return;
   speech.shouldListen = false;
   stopSpeechRecognition();
+  state.tryCount += 1;
+  saveFlightHistory();
   state.phase = "flying";
   state.db = 0;
   state.maxDb = 0;
@@ -501,12 +542,12 @@ function completeLanding() {
 
 function settleRun(landed = false) {
   if (state.hasSettledRun) return;
-  const progress = landed ? 1 : clamp(state.distanceKm / TOTAL_DISTANCE_KM, 0, 1);
-  const base = state.distanceKm > 0 ? BALANCE.runBaseCoins + BALANCE.runProgressCoins * progress : 0;
-  const bonus = landed ? BALANCE.landingBonusCoins : 0;
-  state.lastEarnedCoins = Math.max(0, Math.floor((base + bonus) * state.moneyMultiplier));
+  state.lastEarnedCoins = Math.max(0, Math.floor((state.distanceKm / 100) * state.moneyMultiplier + 1e-9));
   state.coins += state.lastEarnedCoins;
   state.hasSettledRun = true;
+  state.flightHistory.push({try: state.tryCount, distance: state.distanceKm});
+  saveFlightHistory();
+  renderFlightMarkers();
   saveEconomy();
 }
 
@@ -629,7 +670,14 @@ function getSkyHeight() {
 }
 
 function getWorldScrollRatio(progress = state.progress) {
-  return clamp(progress, 0, 1) * (ATMOSPHERE_STRIPS.length - 1);
+  const distance = clamp(progress, 0, 1) * TOTAL_DISTANCE_KM;
+  let start = 0;
+  for (let layer = 0; layer < ATMOSPHERE_BACKGROUNDS.length - 1; layer += 1) {
+    const length = DISTANCE_SEGMENTS[layer + 1].distance + (layer === 0 ? DISTANCE_SEGMENTS[0].distance : 0);
+    if (distance < start + length) return layer * 2 + 2 * (distance - start) / length;
+    start += length;
+  }
+  return ATMOSPHERE_STRIPS.length - 1;
 }
 
 function getSceneWorldScrollRatio() {
@@ -670,7 +718,9 @@ function render() {
             <span></span>
             <span></span>
           </div>
+          <div class="flight-markers" aria-label="Previous flight heights"></div>
           <div class="mini-map">
+            <div class="history-map"></div>
             <img class="mini-moon" src="${asset("MiniMoon_64.png")}" alt="" />
             <img class="mini-rocket" src="${asset("MiniRocket_64.png")}" alt="" />
           </div>
@@ -685,12 +735,13 @@ function render() {
             <img class="big-moon" src="${asset("Moon.png")}" alt="" />
             ${UFO_ENABLED ? `<div class="ufo" aria-hidden="true"><img src="${asset("ufo_128.png")}" alt="" /></div>` : ""}
           </div>
+          <div class="speed-trails" aria-hidden="true">${[7, 19, 31, 71, 83, 94].map((x, i) => `<i style="left:${x}%;animation-delay:${-i * 0.17}s"></i>`).join("")}</div>
           <div class="rocket">
             <img class="rocket-art" src="${asset("Rocket_256.png")}" alt="" />
             <div class="flame" aria-hidden="true">
-              ${[1, 2, 3, 4, 5].map((level) => `
-                <img class="flame-image flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
-              `).join("")}
+              ${[1, 2, 3, 4, 5].map((level) => ["left", "right"].map(side => `
+                <img class="flame-image flame-${side} flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
+              `).join("")).join("")}
             </div>
           </div>
           <div class="landing-scene" aria-hidden="true">
@@ -707,6 +758,10 @@ function render() {
         <div class="meter">
           <span class="fuel-fill"></span>
           <strong></strong>
+          <div class="result-actions" hidden>
+            <button type="button" data-action="debug-replay">[ ${text.exit} ]</button>
+            <button type="button" data-action="debug-replay">[ ${text.continue} ]</button>
+          </div>
         </div>
       </section>
       <footer class="bottom">
@@ -724,6 +779,7 @@ function render() {
       </footer>
     </main>
   `;
+  renderFlightMarkers();
   updateUi();
 }
 
@@ -755,6 +811,13 @@ function updateUi() {
 
   const world = root.querySelector(".world");
   if (world) world.style.setProperty("--scroll", `${getSceneWorldScrollRatio() * getSkyHeight()}px`);
+  const trails = root.querySelector(".speed-trails");
+  if (trails) {
+    const moving = isDistancePhase() && currentSpeedKms() > 0;
+    trails.classList.toggle("moving", moving);
+    trails.style.setProperty("--trail-duration", `${clamp(550 / Math.max(1, currentSpeedKms()), 0.18, 1.5)}s`);
+    trails.style.opacity = moving ? clamp(state.db / 110, 0.12, 0.65) : 0;
+  }
   const launchPad = root.querySelector(".launch-pad");
   if (launchPad) launchPad.style.backgroundImage = `url("${asset("Launchpad_Big.png")}")`;
 
@@ -775,12 +838,27 @@ function updateUi() {
 
   const flame = root.querySelector(".flame");
   if (flame) {
+    const step = Math.floor(clamp(state.db, 0, 110) / 5);
     const level = flameLevel(state.db);
     flame.dataset.level = String(level);
+    flame.dataset.step = String(step);
+    flame.style.width = `${52 + step * 3}px`;
+    flame.style.height = `${68 + step * 5}px`;
+    flame.style.visibility = state.db > 0 ? "visible" : "hidden";
     root.querySelectorAll(".flame-image").forEach((image) => {
       image.classList.toggle("active", image.classList.contains(`flame-level-${level}`));
     });
   }
+
+  root.querySelectorAll(".flight-marker").forEach((marker) => {
+    const y = flightMarkerY(Number(marker.dataset.distance));
+    marker.style.top = `${y * 100}%`;
+    marker.hidden = y < 0.08 || y > 0.94;
+  });
+  const meter = root.querySelector(".meter");
+  const resultActions = root.querySelector(".result-actions");
+  if (meter) meter.classList.toggle("show-result", state.phase === "failed");
+  if (resultActions) resultActions.hidden = state.phase !== "failed";
 
   const miniRocket = root.querySelector(".mini-rocket");
   if (miniRocket) {
@@ -880,18 +958,8 @@ function getCenterMessage(text) {
     return `
       <div class="result-card">
         <strong>${text.failed}</strong>
-        ${state.status ? `<em>${state.status}</em>` : ""}
         <span>${text.distance}: ${formatNumber(Math.floor(state.distanceKm))} Km</span>
         <span>${text.earn}: ${formatNumber(state.lastEarnedCoins)} Coins</span>
-        <div class="upgrade-list">
-          ${getUpgradeLine("speed", "Speed")}
-          ${getUpgradeLine("fuel", "Fuel")}
-          ${getUpgradeLine("money", "Money")}
-        </div>
-        <div class="result-actions">
-          <button type="button" data-action="debug-replay">[ ${text.exit} ]</button>
-          <button type="button" data-action="debug-replay">[ ${text.continue} ]</button>
-        </div>
       </div>
     `;
   }
@@ -933,7 +1001,7 @@ function getUfoState() {
 function getMoonState() {
   const activePhase = state.phase === "flying" || state.phase === "clapPrompt" || state.phase === "holdPrompt";
   const position = getWorldAnchoredViewportY(MOON_APPEAR_PROGRESS, -0.22);
-  const viewportY = position.viewportY;
+  const viewportY = 0.5;
   const revealReady = (state.phase === "holdPrompt" || state.phase === "clapPrompt") &&
     Date.now() - state.holdStartedAt >= MOON_REVEAL_DELAY_MS;
   const visible = activePhase && revealReady && state.progress >= MOON_APPEAR_PROGRESS && viewportY < 1.05;
@@ -941,7 +1009,7 @@ function getMoonState() {
   return {
     visible,
     // Keep the moon's screen position while the satellite background clears.
-    y: position.worldY - (getSceneWorldScrollRatio() - getWorldScrollRatio()),
+    y: viewportY - getSceneWorldScrollRatio(),
     viewportY,
     opacity: fadeIn,
   };
@@ -987,17 +1055,21 @@ function hasUfoClearedRocketForChallenge() {
 
 function updateGame(delta) {
   const text = STRINGS[state.language];
+  const flightDelta = isRunningPhase() ? Math.min(delta, state.fuelRemaining * 1000 / BALANCE.fuelBurnPerSecond) : delta;
+  if (isDistancePhase()) {
+    state.distanceKm = Math.min(TOTAL_DISTANCE_KM * MOON_TRIGGER_PROGRESS, state.distanceKm + currentSpeedKms() * (flightDelta / 1000));
+    syncProgressFromDistance();
+  }
   if (isRunningPhase()) {
     state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * BALANCE.fuelBurnPerSecond);
-    if (state.fuelRemaining <= 0) {
+    if (state.fuelRemaining <= 1e-9) {
+      state.fuelRemaining = 0;
       failGame(text.energyFailed);
       return;
     }
   }
 
   if (isDistancePhase()) {
-    state.distanceKm = Math.min(TOTAL_DISTANCE_KM * MOON_TRIGGER_PROGRESS, state.distanceKm + currentSpeedKms() * (delta / 1000));
-    syncProgressFromDistance();
     checkUfoCollision();
     if (!isDistancePhase()) return;
   }

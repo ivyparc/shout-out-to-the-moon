@@ -246,6 +246,7 @@ select {
 }
 
 .rocket-art {
+  z-index: 2;
   position: absolute;
   left: 50%;
   bottom: 52px;
@@ -258,37 +259,12 @@ select {
 .flame {
   position: absolute;
   left: 50%;
-  top: 124px;
+  top: 112px;
   width: 104px;
   height: 104px;
   transform: translateX(-50%);
   transform-origin: top center;
   transition: width 120ms ease, height 120ms ease;
-}
-
-.flame[data-level="1"] {
-  width: 48px;
-  height: 48px;
-}
-
-.flame[data-level="2"] {
-  width: 60px;
-  height: 60px;
-}
-
-.flame[data-level="3"] {
-  width: 72px;
-  height: 72px;
-}
-
-.flame[data-level="4"] {
-  width: 88px;
-  height: 88px;
-}
-
-.flame[data-level="5"] {
-  width: 104px;
-  height: 104px;
 }
 
 .flame-image {
@@ -299,6 +275,7 @@ select {
   display: block;
   object-fit: contain;
   object-position: center top;
+  object-fit: fill;
   opacity: 0;
 }
 
@@ -389,7 +366,9 @@ select {
 }
 
 .center-message.phase-failed {
-  top: 48%;
+  top: auto;
+  bottom: 8px;
+  transform: translateX(-50%);
   width: 94%;
 }
 
@@ -560,18 +539,18 @@ select {
 }
 
 .result-card {
-  width: min(88%, 360px);
+  width: 100%;
   margin: 0 auto;
-  padding: 24px 20px;
+  padding: 14px 10px;
   border: 2px solid #686d74;
-  border-radius: 32px;
+  border-radius: 20px;
   color: #111111;
   background: rgba(238, 238, 238, 0.96);
   pointer-events: auto;
 }
 
 .result-card strong {
-  margin-bottom: 22px;
+  margin-bottom: 8px;
   color: #000000;
   font-size: 28px;
 }
@@ -579,9 +558,9 @@ select {
 .result-card span {
   margin-top: 6px;
   color: #000000;
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 500;
-  text-align: left;
+  text-align: center;
 }
 
 .result-card em {
@@ -621,3 +600,26 @@ select {
   font-weight: 800;
   text-align: center;
 }
+
+/* Near-camera streaks convey speed without altering distance or fuel time. */
+.speed-trails { position: absolute; inset: 0; pointer-events: none; overflow: hidden; opacity: 0; }
+.speed-trails i { position: absolute; top: -25%; width: 2px; height: 18%; border-radius: 50%; background: linear-gradient(transparent, rgba(255,255,255,.8)); animation: flight-trail var(--trail-duration, 1s) linear infinite; animation-play-state: paused; }
+.speed-trails.moving i { animation-play-state: running; }
+@keyframes flight-trail { to { transform: translateY(750%); } }
+@media (prefers-reduced-motion: reduce) { .speed-trails { display: none; } }
+
+.flame-left { transform: translateX(-7%) rotate(-3deg); transform-origin: 50% 0; }
+.flame-right { transform: translateX(7%) rotate(3deg); transform-origin: 50% 0; }
+.flight-markers { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+.flight-marker { position: absolute; left: 8%; color: #fffb00; font-size: 13px; line-height: 1.1; text-align: center; transform: translate(-50%, -50%); text-shadow: 0 1px 2px #35344c; }
+.flight-marker i { display: block; width: 8px; height: 8px; margin: 0 auto 3px; background: #fffb00; border-radius: 50%; }
+.flight-marker.best { font-weight: 800; }
+.flight-marker.best i { width: 12px; height: 12px; }
+.history-map { position: absolute; inset: 0; pointer-events: none; }
+.history-dot { position: absolute; right: -5px; width: 5px; height: 5px; background: #fffb00; border-radius: 50%; box-shadow: 0 0 2px #56564b; }
+.history-dot.best { width: 7px; height: 7px; }
+.result-actions[hidden], .flight-marker[hidden] { display: none; }
+.meter.show-result { background: #eee; }
+.meter.show-result > strong, .meter.show-result > .fuel-fill { display: none; }
+.meter .result-actions { width: 100%; align-items: center; gap: 0; }
+.meter .result-actions button { padding: 10px 4px; font-size: clamp(18px, 4.5vw, 26px); }

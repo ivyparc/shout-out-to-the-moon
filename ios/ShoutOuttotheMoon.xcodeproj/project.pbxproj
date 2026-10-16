@@ -3,15 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 46;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		000C5B099A97B3980CD88410 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E4B26CE93576EA718DCEECC /* ExpoModulesProvider.swift */; };
 		0DB9CACAA587D3D760CE5D29 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AC352032BC02CB156A4C31E3 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3599389CF4A149A3A1E18A6D /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 833E92025EE34D9080D52722 /* InfoPlist.strings */; };
-		37F5027724166577A5F9803B /* libPods-ShoutOuttotheMoon.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 414B921064A7CD44A60CCC2A /* libPods-ShoutOuttotheMoon.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		4B69A86D8C6C4B0497A83A2E /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4088417E85F7496589027797 /* InfoPlist.strings */; };
 		5A274F27D3C14C9E804DF8C0 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9E4C43DD4B1F4D85B8EAC1FC /* InfoPlist.strings */; };
@@ -24,12 +22,8 @@
 		13B07F961A680F5B00A75B9A /* ShoutOuttotheMoon.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ShoutOuttotheMoon.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = ShoutOuttotheMoon/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ShoutOuttotheMoon/Info.plist; sourceTree = "<group>"; };
-		1D277986391C7E17CF7E52F2 /* Pods-ShoutOuttotheMoon.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ShoutOuttotheMoon.debug.xcconfig"; path = "Target Support Files/Pods-ShoutOuttotheMoon/Pods-ShoutOuttotheMoon.debug.xcconfig"; sourceTree = "<group>"; };
-		1F30FF1EDFF5227808E1C9DC /* Pods-ShoutOuttotheMoon.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ShoutOuttotheMoon.release.xcconfig"; path = "Target Support Files/Pods-ShoutOuttotheMoon/Pods-ShoutOuttotheMoon.release.xcconfig"; sourceTree = "<group>"; };
 		1F74AD74682A48F1B82153E8 /* InfoPlist.strings */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		2E4B26CE93576EA718DCEECC /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-ShoutOuttotheMoon/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		4088417E85F7496589027797 /* InfoPlist.strings */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		414B921064A7CD44A60CCC2A /* libPods-ShoutOuttotheMoon.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ShoutOuttotheMoon.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		833E92025EE34D9080D52722 /* InfoPlist.strings */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		9E4C43DD4B1F4D85B8EAC1FC /* InfoPlist.strings */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = ShoutOuttotheMoon/SplashScreen.storyboard; sourceTree = "<group>"; };
@@ -45,7 +39,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				37F5027724166577A5F9803B /* libPods-ShoutOuttotheMoon.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -86,7 +79,6 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				414B921064A7CD44A60CCC2A /* libPods-ShoutOuttotheMoon.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -132,7 +124,6 @@
 		969E54CD8D14BC89685CCC41 /* ShoutOuttotheMoon */ = {
 			isa = PBXGroup;
 			children = (
-				2E4B26CE93576EA718DCEECC /* ExpoModulesProvider.swift */,
 			);
 			name = ShoutOuttotheMoon;
 			sourceTree = "<group>";
@@ -169,8 +160,6 @@
 		F2CD2E702031EFCF76B7A973 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				1D277986391C7E17CF7E52F2 /* Pods-ShoutOuttotheMoon.debug.xcconfig */,
-				1F30FF1EDFF5227808E1C9DC /* Pods-ShoutOuttotheMoon.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -182,12 +171,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "ShoutOuttotheMoon" */;
 			buildPhases = (
-				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				D051A6BB648F584581373C11 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
-				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -207,7 +193,9 @@
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						DevelopmentTeam = GWBS3Q4W36;
 						LastSwiftMigration = 1250;
+						ProvisioningStyle = Manual;
 					};
 				};
 			};
@@ -247,83 +235,12 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-ShoutOuttotheMoon-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-ShoutOuttotheMoon/Pods-ShoutOuttotheMoon-resources.sh",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
-			);
-			name = "[CP] Copy Pods Resources";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-ShoutOuttotheMoon/Pods-ShoutOuttotheMoon-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		D051A6BB648F584581373C11 /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-ShoutOuttotheMoon/expo-configure-project.sh\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXSourcesBuildPhase section */
 		13B07F871A680F5B00A75B9A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				000C5B099A97B3980CD88410 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,14 +249,13 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1D277986391C7E17CF7E52F2 /* Pods-ShoutOuttotheMoon.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = ShoutOuttotheMoon/ShoutOuttotheMoon.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = GWBS3Q4W36;
 				ENABLE_BITCODE = NO;
@@ -349,10 +265,7 @@
 				);
 				INFOPLIST_FILE = ShoutOuttotheMoon/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -374,22 +287,18 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1F30FF1EDFF5227808E1C9DC /* Pods-ShoutOuttotheMoon.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = ShoutOuttotheMoon/ShoutOuttotheMoon.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = GWBS3Q4W36;
 				INFOPLIST_FILE = ShoutOuttotheMoon/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -456,10 +365,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					/usr/lib/swift,
-					"$(inherited)",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "/usr/lib/swift $(inherited)";
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -512,10 +418,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					/usr/lib/swift,
-					"$(inherited)",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "/usr/lib/swift $(inherited)";
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = NO;
 				OTHER_LDFLAGS = "$(inherited)  ";

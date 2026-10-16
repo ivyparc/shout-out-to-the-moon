@@ -12,7 +12,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "8",
+      "buildNumber": "9",
       "bundleIdentifier": "com.sunnyinnolab.ShoutOut",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "The microphone is used to measure your shout volume and move the rocket.",
