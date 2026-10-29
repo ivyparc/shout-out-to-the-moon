@@ -1,0 +1,17 @@
+import { readFile, writeFile, mkdir, cp } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+const root = fileURLToPath(new URL('..', import.meta.url));
+const site = join(root, 'web-share');
+const manifest = JSON.parse(await readFile(join(site, '.openai/hosting.json'), 'utf8'));
+if (manifest.project_id !== 'appgprj_6ac83a4afddc8191903a99451e263c09' || manifest.d1 !== 'DB' || manifest.static) throw new Error('Expected the existing single Worker Site with its private DB binding.');
+await mkdir(join(site, 'public/src/web'), { recursive: true });
+await mkdir(join(site, 'lib/moon'), { recursive: true });
+for (const name of ['main.js', 'styles.css', 'leaderboard-config.js', 'leaderboard.js']) await cp(join(root, 'src/web', name), join(site, 'public/src/web', name));
+await cp(join(root, 'public/assets'), join(site, 'public/assets'), { recursive: true });
+await cp(join(root, 'index.html'), join(site, 'public/game.html'));
+for (const name of ['moon-service.mjs', 'moon-validator.mjs']) await cp(join(root, 'server', name), join(site, 'lib/moon', name));
+const pkgPath = join(site, 'package.json');
+const pkg = JSON.parse(await readFile(pkgPath, 'utf8')); pkg.name = 'shout-out-to-the-moon-secure-site';
+await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+console.log('Synchronized game and leaderboard into the existing single server Site.');

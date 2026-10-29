@@ -12,6 +12,7 @@ const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
+  ".mp4": "video/mp4",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".svg": "image/svg+xml",
@@ -31,8 +32,24 @@ function resolvePath(url) {
 
 createServer(async (request, response) => {
   try {
+    if (request.url?.split("?")[0] === "/src/web/leaderboard-config.js" && process.env.LEADERBOARD_ENDPOINT) {
+      const config = await readFile(join(root, "src/web/leaderboard-config.js"), "utf8");
+      response.writeHead(200, { "Content-Type": contentTypes[".js"], "Cache-Control": "no-store" });
+      response.end(`${config}\nwindow.SHOUT_MOON_LEADERBOARD.endpoint = ${JSON.stringify(process.env.LEADERBOARD_ENDPOINT)};`);
+      return;
+    }
     const filePath = resolvePath(request.url ?? "/");
     const body = await readFile(filePath);
+    if (extname(filePath) === ".mp4" && request.headers.range) {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range);
+      const start = range ? Number(range[1]) : NaN;
+      const end = range?.[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+      if (!Number.isSafeInteger(start) || start > end || start >= body.length) {
+        response.writeHead(416, { "Content-Range": `bytes */${body.length}` }); response.end(); return;
+      }
+      response.writeHead(206, { "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${body.length}`, "Content-Length": end - start + 1 });
+      response.end(body.subarray(start, end + 1)); return;
+    }
     response.writeHead(200, {
       "Content-Type": contentTypes[extname(filePath)] ?? "application/octet-stream",
       "Cache-Control": "no-store",

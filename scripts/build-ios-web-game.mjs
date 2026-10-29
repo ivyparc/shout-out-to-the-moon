@@ -7,6 +7,17 @@ const assetsDir = join(root, "public/assets");
 const output = join(root, "ios/ShoutOuttotheMoon/AppDelegate.swift");
 const requiredAssets = new Set([
   "MiniMoon_64.png",
+  "troposphere-motion-poster.png",
+  "stratosphere-motion-poster.png",
+  "mesosphere-motion-poster.png",
+  "thermosphere-motion-poster.png",
+  "exosphere-motion-poster.png",
+
+  "troposphere-motion.mp4",
+  "stratosphere-motion.mp4",
+  "mesosphere-motion.mp4",
+  "thermosphere-motion.mp4",
+  "exosphere-motion.mp4",
   "MiniRocket_64.png",
   "Flame_Lv1.png",
   "Flame_Lv2.png",
@@ -18,6 +29,7 @@ const requiredAssets = new Set([
   "Rocket_256.png",
   "clouds.png",
   "Launchpad_Big.png",
+  "Launchpad_Small.png",
   "대류권.png",
   "성층권.png",
   "중간권.png",
@@ -35,6 +47,7 @@ const requiredAssets = new Set([
 
 const mimeTypes = new Map([
   [".gif", "image/gif"],
+  [".mp4", "video/mp4"],
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
   [".png", "image/png"],
@@ -287,17 +300,23 @@ public class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelega
     guard frameLength > 0 else { return }
 
     var total: Float = 0
+    var mean: Float = 0
+    var peak: Float = 0
+    for index in 0..<frameLength { mean += channelData[index] }
+    mean /= Float(frameLength)
     for index in 0..<frameLength {
       let sample = channelData[index]
-      total += sample * sample
+      total += (sample - mean) * (sample - mean)
+      peak = max(peak, abs(sample))
     }
 
     let rms = Double(sqrt(total / Float(frameLength)))
-    let measuredDb = max(0, min(110, Int((20.0 * log10(rms + 0.00001) + 96.0).rounded())))
+    let dbfs = 20.0 * log10(max(rms, 0.00000001))
+    let device = (AVAudioSession.sharedInstance().currentRoute.inputs.first?.uid ?? "default") + String(buffer.format.sampleRate)
     let now = Date().timeIntervalSince1970
     guard now - lastDbSentAt >= 0.08 else { return }
     lastDbSentAt = now
-    dispatchWebEvent("native-decibel", detail: ["db": measuredDb])
+    dispatchWebEvent("native-decibel", detail: ["dbfs": dbfs, "peak": peak, "device": device])
   }
 
   private func dispatchWebEvent(_ eventName: String, detail: [String: Any]) {
@@ -369,11 +388,13 @@ public class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelega
 `;
 }
 
-const [html, css, js, assetFiles] = await Promise.all([
+const [html, css, js, assetFiles, leaderboardConfig, leaderboardJs] = await Promise.all([
   readFile(join(root, "index.html"), "utf8"),
   readFile(join(root, "src/web/styles.css"), "utf8"),
   readFile(join(root, "src/web/main.js"), "utf8"),
   readdir(assetsDir),
+  readFile(join(root, "src/web/leaderboard-config.js"), "utf8"),
+  readFile(join(root, "src/web/leaderboard.js"), "utf8"),
 ]);
 
 const assetEntries = await Promise.all(
@@ -389,15 +410,23 @@ const assetEntries = await Promise.all(
 const assetScript = `
 window.SHOUT_MOON_NATIVE_AUDIO = true;
 window.SHOUT_MOON_ASSETS = ${JSON.stringify(Object.fromEntries(assetEntries))};
+function showWebError(message) {
+  var pre = document.createElement('pre');
+  pre.style.cssText = 'white-space:pre-wrap;padding:16px;color:#b42318;font:14px -apple-system,BlinkMacSystemFont,sans-serif;';
+  pre.textContent = message;
+  document.body.replaceChildren(pre);
+}
 window.addEventListener("error", function (event) {
-  document.body.innerHTML = '<pre style="white-space:pre-wrap;padding:16px;color:#b42318;font:14px -apple-system,BlinkMacSystemFont,sans-serif;">Web game error: ' + String(event.message || "Unknown error") + '</pre>';
+  showWebError('Web game error: ' + String(event.message || "Unknown error"));
 });
 window.addEventListener("unhandledrejection", function (event) {
   var reason = event.reason && event.reason.message ? event.reason.message : event.reason;
-  document.body.innerHTML = '<pre style="white-space:pre-wrap;padding:16px;color:#b42318;font:14px -apple-system,BlinkMacSystemFont,sans-serif;">Web game promise error: ' + String(reason || "Unknown error") + '</pre>';
+  showWebError('Web game promise error: ' + String(reason || "Unknown error"));
 });`;
 
 const document = html
+  .replace('<script src="/src/web/leaderboard-config.js"></script>', `<script>${leaderboardConfig}\n${process.env.LEADERBOARD_ENDPOINT ? `window.SHOUT_MOON_LEADERBOARD.endpoint = ${JSON.stringify(process.env.LEADERBOARD_ENDPOINT).replace(/</g, "\\u003c")};` : ""}</script>`)
+  .replace('<script src="/src/web/leaderboard.js"></script>', `<script>${leaderboardJs}</script>`)
   .replace(/<link\s+rel="stylesheet"\s+href="[^"]*src\/web\/styles\.css"[^>]*\/?\s*>/, `<style>${css}</style>`)
   .replace(/<script\s+type="module"\s+src="[^"]*src\/web\/main\.js[^"]*"><\/script>/, `<script>${assetScript}\n${js}</script>`);
 

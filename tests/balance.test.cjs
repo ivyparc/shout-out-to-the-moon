@@ -23,7 +23,6 @@ function game() {
     run('reset(); startGame();');
     for (let tick = 0; tick < 10000; tick++) {
       now += 50;
-      if (run('state.phase') === 'separationPrompt') run('completeSeparation()');
       if (run('isDistancePhase()')) run(`setMeasuredDb(${Array.isArray(db) ? db[tick % db.length] : db})`);
       if (run('state.phase') === 'holdPrompt') run('setMeasuredDb(55)');
       if (run('state.phase') === 'clapPrompt') run('registerClap(90)');
@@ -117,7 +116,7 @@ test('speed is exactly dB times engine; fuel burns one tonne per real second', (
 
 test('default fuel lasts ten seconds and counts the final flight interval', () => {
   const { run } = game();
-  run('startGame(); setMeasuredDb(58); updateGame(5000); completeSeparation(); updateGame(4999);');
+  run('startGame(); setMeasuredDb(58); updateGame(5000); updateGame(4999);');
   assert.equal(run('state.phase'), 'flying');
   run('updateGame(1);');
   assert.equal(run('state.phase'), 'failed');

@@ -9,3 +9,6 @@ yarn-error.log*
 
 # Separate Sites deployment checkout
 web-share/
+
+# Temporary isolated Sites starter
+secure-site-starter/

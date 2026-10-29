@@ -36,7 +36,7 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 ## Upgrade progression
 
 A fresh save reaches the Moon in 9–10 runs at a steady 65–75 dB when the player
-completes separation/hold/clap prompts and buys engine and fuel upgrades alternately.
+completes hold/clap prompts and buys engine and fuel upgrades alternately.
 Either purchase order is supported. 65–70 dB lands on run 10; 75 dB lands on run 9. At 55 dB it takes 13 runs. Louder voices arrive sooner;
 quieter voices or failed challenges take longer. There is no attempt-count unlock.
 
@@ -51,6 +51,111 @@ quieter voices or failed challenges take longer. There is no attempt-count unloc
 - UFOs remain disabled; continuous five-second hold and three claps remain required.
 
 Run the progression and gameplay regressions with `node --test tests/*.test.cjs`.
+
+## Moon landing leaderboard — one secure server
+
+The existing [Web Playtest](https://shout-moon-playtest-ivy.fancyolm1.chatgpt.site)
+serves both the game and `/api/leaderboard` from **one Sites Worker deployment**.
+Its private D1 storage binding is not a second application/API server. There is no
+separate scoring, security, legacy, migration or leaderboard service. The iOS
+WebView uses the same HTTPS API. Browser requests use the current Site origin.
+This is one logical application service, not a guarantee of exactly one physical
+machine or concurrent process: Cloudflare controls Worker execution and D1 storage.
+
+This integration adapts the [ivyparc/leaderboard API v2 contract](https://github.com/ivyparc/leaderboard/blob/main/docs/api.md)
+to the existing Site's D1 runtime, with Moon-specific progression and migration
+operations on the same endpoint. It does not deploy the repository's separate
+Node/PostgreSQL example server or connect clients directly to a database.
+
+- A successful Moon landing automatically registers **server-measured time to the
+  Moon in milliseconds**, shortest first. The board retains each player's fastest
+  time per period; ties use the earlier achievement. Display format is `m:ss.mmm`.
+- Timing starts with server launch approval and ends when the server receives the
+  landing-complete notification. Hold, claps, landing animation and network transit
+  count. The first arrival receipt is frozen before replay uploads, so upload/retry
+  delays cannot alter an accepted time. Offline arrival is timed when it reaches
+  the server. The receipt alone earns nothing; the complete replay must validate.
+- Coins still reward gameplay and buy upgrades. Legacy coin rankings remain in
+  `moon_scores`; time rankings use `moon_time_scores`, never reinterpreting coins
+  as milliseconds. Existing balances, upgrades and local saves are preserved.
+- Failed flights earn server-calculated coins but never enter the ranking.
+- Top 100, personal rank, current/past periods, All months and nickname editing are
+  available from the ranking panel. Reads do not register names or scores.
+- Toronto calendar boundaries apply. Periods roll forward in a newer month only
+  after reaching 1,000 participants. No score records are automatically deleted.
+- The server issues an opaque 256-bit bearer credential and stores only its hash.
+  The client stores its credential per API endpoint. Credentials never appear in
+  public rankings. HTTPS, origin checks, request-size/rate limits and ownership
+  checks protect writes.
+- The same server owns coins, upgrade costs, stats and active flights. It replays
+  distance, fuel, continuous five-second hold and timed claps, checks gameplay
+  against its clock, and computes the reward. Client-provided scores have no effect.
+- Purchases use expected stat values to prevent duplicate retries. Flight batches,
+  settlement, score submission and migration redemption are replay-safe.
+- Completed runs persist in the client outbox on network failure; **Retry submission**,
+  reconnect or restart resumes them. A failed start never fabricates a verified run.
+  Expired runs and first submissions from previous Toronto months remain visible
+  errors. An unfinished flight can be abandoned without reward.
+
+Microphone samples still originate on the device; this does not attest physical
+sound or stop a modified client from fabricating otherwise-valid input. The server
+validates game rules and progression. Ranked limits are Speed 10,000, Fuel 600 and
+Money 10,000. Test hold/clap controls do not inject input into online flights.
+
+Security review (2026-10-22): server authentication, per-player ownership, trusted
+upgrades, earliest server arrival receipts, replay settlement, migration reuse,
+foreign origins, request sizes and rate limits are covered by API tests. The iOS
+error view now renders error messages as text, not HTML. Next.js and React server
+packages were updated following their [Next.js advisory](https://github.com/vercel/next.js/security/advisories/GHSA-vcvr-r3jv-pc5j)
+and [React advisory](https://github.com/react/react/security/advisories/GHSA-wx67-qw84-cm4g).
+`npm audit --omit=dev` in the Site checkout reports zero known vulnerabilities.
+The full development tree still reports 12 affected packages from two advisories:
+`braces` via build-time glob tooling, and an older `esbuild` in Drizzle's TypeScript
+loader. These are build/tooling paths; no corresponding imports were found in the
+production Worker output. Do not expose development servers or build untrusted
+source. No forced major downgrade was applied to hide these warnings. This review
+is not a penetration-test certification or a guarantee against all cheating.
+
+### Preserve and transfer existing progress
+
+Fresh saves connect online automatically. Existing local coins/upgrades/history
+remain untouched until the player explicitly chooses an online profile. Online
+history uses a separate key, and **Return to preserved device progress** restores
+the original local play state. Legacy local progress is not automatically trusted.
+
+1. Open **Prepare progress transfer** to obtain the target player ID and local
+   coin/upgrade snapshot. This does not modify either saved balance.
+2. An administrator reviews that snapshot. Use `scripts/approve-moon-migration.mjs`
+   with a reviewed JSON file and the server-only `MOON_ADMIN_SECRET` environment
+   variable to issue a target-bound, 24-hour, single-use transfer code.
+3. The player enters the code on the same device/profile. The server atomically
+   imports the approved stats only into an unused online profile. Reusing a code
+   cannot add coins again. Original device storage remains available.
+4. Only future server-verified Moon landings enter the ranking; old scores are not
+   invented or imported. Approval snapshots/reasons remain in the server audit table.
+
+No existing player's progress was approved or moved as part of this implementation.
+The administrator secret is a Sites runtime secret, never a browser/iOS build value.
+
+### Source, build and checks
+
+`server/moon-service.mjs` and `server/moon-validator.mjs` contain the authoritative
+API and game rules. `server/schema.sql` includes the generated Site migrations.
+The existing `web-share` source repository holds the Vinext Worker, Drizzle schema,
+immutable migration history and the same original Sites project ID. Run
+`npm run site:sync` after editing game/API sources; use the Sites workflow to build
+and publish that existing project. Do not register another Site/server.
+
+`npm run ios:web-game` embeds the current client into `AppDelegate.swift`. A public
+API URL override is supported with `LEADERBOARD_ENDPOINT`; never put server secrets
+in `src/web/leaderboard-config.js`. Store builds still require normal Xcode signing,
+archiving and upload.
+
+`npm test` covers gameplay, actual game/client/API integration, SQL transactions,
+failed-flight rewards, authoritative upgrade checks, forged submissions, cross-player
+access, lost responses, reload recovery, nickname quota and one-time migrations.
+The SQL tests use Node 24's built-in SQLite to exercise the D1-compatible queries;
+Sites preview exercises the real Worker/D1 runtime separately.
 
 ## Permissions
 
@@ -127,3 +232,22 @@ Then open the Expo web URL in a browser. On web, the app attempts browser microp
 - Native Android store packaging has not been finalized.
 - Store-ready screenshots and final App Store / Play Store listing materials are still needed.
 - The iOS TestFlight build depends on the generated `AppDelegate.swift`; regenerate it after web game changes.
+
+## Microphone reference calibration
+
+The browser uses float PCM samples with DC removal, avoiding the previous 8-bit
+quantization floor around 51 dB. Automatic gain control, noise suppression and
+echo cancellation are requested off. The microphone settings are checked; active
+processing blocks reference calibration. Native audio sends raw dBFS and peak
+amplitude through the same calibration path.
+
+Before calibration, `dBFS + 96` remains explicitly labelled as an uncalibrated
+game level, not sound pressure. A real reference meter beside the microphone can
+supply a steady 20–120 dB reading. Five seconds of stable, non-clipping audio
+establishes and saves a device-specific offset. Changing microphone/settings
+invalidates the saved reference. No reference value is guessed automatically.
+
+This is a single-point estimate, not a certified sound level meter. No A/C
+frequency weighting is implemented; spectrum, hardware frequency response or
+gain changes can make readings differ from a dBA/dBC reference. Physical accuracy
+requires measurement hardware and validation against the actual reference meter.

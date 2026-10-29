@@ -255,7 +255,7 @@
 				CODE_SIGN_ENTITLEMENTS = ShoutOuttotheMoon/ShoutOuttotheMoon.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = GWBS3Q4W36;
 				ENABLE_BITCODE = NO;
@@ -293,7 +293,7 @@
 				CODE_SIGN_ENTITLEMENTS = ShoutOuttotheMoon/ShoutOuttotheMoon.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = GWBS3Q4W36;
 				INFOPLIST_FILE = ShoutOuttotheMoon/Info.plist;

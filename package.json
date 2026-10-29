@@ -11,7 +11,9 @@
     "android": "expo run:android",
     "ios:web-game": "node scripts/build-ios-web-game.mjs",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "site:sync": "node scripts/sync-secure-site.mjs",
+    "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.5",
