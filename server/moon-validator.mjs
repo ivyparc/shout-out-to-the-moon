@@ -3,7 +3,7 @@
 // never simply echo the client's loadout. Local saves are not proof of upgrades.
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
-const TOTAL_DISTANCE = 19500;
+const TOTAL_DISTANCE = 384399;
 
 export function moonValidator({ resolveLoadout, allowFailures = false } = {}) {
   if (typeof resolveLoadout !== "function") throw new Error("A trusted Moon loadout resolver is required.");
@@ -18,20 +18,21 @@ export function moonValidator({ resolveLoadout, allowFailures = false } = {}) {
       if (input?.loadout?.speed !== stats.speed || input?.loadout?.fuel !== stats.fuel || input?.loadout?.money !== stats.money) {
         fail("Local upgrades differ from verified upgrades.", 409);
       }
-      return { state: { stats, startedAt: now.toISOString(), phase: "flying", distance: 0,
+      return { state: { stats, totalDistance: input?.rulesVersion === 2 ? TOTAL_DISTANCE : 19500, startedAt: now.toISOString(), phase: "flying", distance: 0,
         fuel: stats.fuel, elapsed: 0, hold: 0, holdOut: 0, holdAt: 0, clapAt: 0,
         lastClapAt: -1000, claps: 0, sequence: 0, lastBatch: "", landingAt: 0 }, challenge: { protocol: "moon-flight-v1" } };
     },
     event({ state, event, now }) {
       const s = structuredClone(state);
       const realElapsed = now - new Date(s.startedAt);
+      const totalDistance = s.totalDistance || 19500;
       if (realElapsed < 0 || realElapsed > 24 * 3600000) fail("Invalid flight clock.");
       if (event?.type === "finish") {
-        if (allowFailures && s.phase === "failed") return { state: s, complete: false, failed: true, earned: Math.floor(s.distance / 100 * s.stats.money + 1e-9) };
+        if (allowFailures && s.phase === "failed") return { state: s, complete: false, failed: true, score: realElapsed, earned: Math.floor(s.distance / 100 * s.stats.money + 1e-9) };
         if (s.phase !== "landing" || realElapsed < s.landingAt + 1400) fail("A completed Moon landing is required.");
         // Ranking time comes from the server clock; coins remain a separate reward.
         return { state: s, complete: true, score: realElapsed,
-          earned: Math.floor(TOTAL_DISTANCE / 100 * s.stats.money + 1e-9), challenge: null };
+          earned: Math.floor(totalDistance / 100 * s.stats.money + 1e-9), challenge: null };
       }
       if (event?.type !== "frames" || !Number.isSafeInteger(event.sequence) ||
           !Array.isArray(event.frames) || !event.frames.length || event.frames.length > 200) fail("Invalid flight frames.");
@@ -52,10 +53,10 @@ export function moonValidator({ resolveLoadout, allowFailures = false } = {}) {
           const flightDelta = Math.min(frame.delta, s.fuel * 1000);
           s.fuel -= frame.delta / 1000;
           if (s.phase === "flying") {
-            s.distance = Math.min(TOTAL_DISTANCE, s.distance + frame.db * s.stats.speed * flightDelta / 1000);
+            s.distance = Math.min(totalDistance, s.distance + frame.db * s.stats.speed * flightDelta / 1000);
           }
           if (s.fuel <= 1e-9) { s.fuel = 0; flightFailure("Flight ran out of fuel."); continue; }
-          if (s.phase === "flying" && s.distance >= TOTAL_DISTANCE) { s.phase = "holdPrompt"; s.holdAt = s.elapsed; }
+          if (s.phase === "flying" && s.distance >= totalDistance) { s.phase = "holdPrompt"; s.holdAt = s.elapsed; }
           if (s.phase === "clapPrompt" && s.elapsed - s.clapAt > 8000) { flightFailure("Clap challenge expired."); continue; }
           if (s.phase === "holdPrompt") {
             // The browser resets dB to zero on the transition into the hold.

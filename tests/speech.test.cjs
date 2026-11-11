@@ -121,3 +121,29 @@ test('silence retries after session ends; unsupported and native paths stay sepa
   const native = game({native:true}); native.run('startVoiceInput()');
   assert.equal(native.recognizers.length, 0);
 });
+
+test('first visit exposes voice activation, then Launch works after the recognition starts', () => {
+  const g = game();
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /data-action="enable-voice"/);
+  g.run('handleButtonAction({dataset:{action:"enable-voice"}})');
+  assert.equal(g.recognizers.length,1);
+  assert.equal(g.recognizers[0].starts,1);
+  g.recognizers[0].onstart();
+  assert.doesNotMatch(g.run('getCenterMessage(STRINGS.en)'), /enable-voice/);
+  g.recognizers[0].onresult({resultIndex:0,results:[[{transcript:'Launch'}]]});
+  assert.equal(g.run('state.phase'),'flying');
+  assert.equal(g.run('state.tryCount'),1);
+});
+
+test('voice activation shows connecting, ready and failure feedback beside the central button', () => {
+  const g = game();
+  g.run('startVoiceInput({fromUserGesture:true})');
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /voice-feedback.*Connecting/);
+  const r=g.recognizers[0]; r.onstart();
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /Listening/);
+  r.onerror({error:'network'});r.onend();
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /enable-voice/);
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /Cannot connect to the speech service/);
+  g.run('state.speechStatus="<unsafe>"');
+  assert.match(g.run('getCenterMessage(STRINGS.en)'), /&lt;unsafe&gt;/);
+});

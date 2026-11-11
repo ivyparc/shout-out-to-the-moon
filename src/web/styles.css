@@ -734,7 +734,6 @@ select {
 .history-dot.best { border-radius: 1px; transform: rotate(45deg); }
 .history-label { position: absolute; right: 10px; display: flex; align-items: center; gap: 4px; transform: translateY(50%); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; text-shadow: 0 1px 3px #343452b3; }
 .history-label .history-dot { position: static; flex: none; width: 6px; height: 6px; background: #fff; box-shadow: 0 1px 3px #34345270; }
-.history-label.nearby > span { transform: translateY(16px); }
 .flight-marker { display: flex; align-items: center; gap: 5px; left: 5.2%; max-width: 88%; color: #b7b0d0; text-shadow: none; font-size: 10px; font-weight: 400; text-align: left; }
 .flight-marker.best { color: #e2d9ff; font-weight: 600; }
 .flight-marker i { margin: 0; width: 6px; height: 6px; background: currentColor; }
@@ -821,3 +820,58 @@ select {
 }
 .background-video.ready { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .background-video { display: none; } }
+
+/* November play / result panels. */
+.hud-upgrade[hidden], .coin-pill[hidden], .moon-rankings[hidden], .community-marker[hidden] { display: none; }
+.distance-markers { left: 2.6%; }
+.flight-marker { left: 2.6%; }
+.flight-marker.latest { color: #fff; font-weight: 700; z-index: 2; }
+.flight-marker.latest i { background: #ffdf35; width: 8px; height: 8px; }
+.history-label { left: 29px; right: auto; gap: 3px; font-size: 10px; }
+.mini-map { right: 10%; }
+.community-markers { position: absolute; inset: 0; z-index: 14; pointer-events: none; }
+.community-marker { position: absolute; left: 2.6%; display: flex; gap: 4px; align-items: center; color: #fff; font-size: 10px; line-height: 14px; text-shadow: 0 1px 3px #262346; transform: translateY(-50%); }
+.community-marker i { width: 4px; height: 4px; background: #fff; border-radius: 50%; }
+.moon-rankings { position: absolute; left: -29px; top: -3px; z-index: 16; border: 0; border-radius: 9px; width: 30px; height: 30px; padding: 5px; color: #ffdf35; background: #26213ecc; cursor: pointer; }
+.rocket-thruster { position: absolute; inset: 0; transform-origin: 50% 65%; }
+.vibrating .rocket-thruster { animation: rocket-vibration 150ms linear infinite; }
+@keyframes rocket-vibration { 0%,100% { transform: translate(.4px,0) rotate(-.25deg); } 25% { transform: translate(-.7px,.7px) rotate(.3deg); } 50% { transform: translate(.7px,-.6px) rotate(-.3deg); } 75% { transform: translate(-.4px,.3px) rotate(.2deg); } }
+.flame { top: 114px; clip-path: polygon(22% 0,78% 0,100% 32%,100% 100%,0 100%,0 32%); }
+.gauge-reading strong small { font-size: 10px; font-weight: 400; color: #e0dbed; letter-spacing: 0; }
+.gauge-speed .gauge-value { stroke: #ff9b22; }
+.gauge-fuel .gauge-value { stroke: #16cd69; }
+.low-fuel .gauge-fuel .gauge-value { stroke: #ff5284; }
+.game-over .world, .game-over .rocket, .game-over .speed-trails { filter: blur(3px); }
+.flight-result { background: #25203de8; padding: 16px 14px 14px; }
+.result-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.result-heading h2 { margin: 0; font-size: 20px; }
+.result-wallet, .upgrade-wallet { display: inline-flex; gap: 5px; align-items: center; color: #fff; border-radius: 18px; background: #16132699; padding: 5px 8px; font-size: 12px; font-weight: 700; }
+.result-wallet .hud-icon { width: 15px; height: 15px; color: #ffe000; }
+.result-metrics .result-fuel-capacity { background: #16cd69; }
+.result-metrics .result-money-bonus { background: #ffe000; }
+.result-metrics strong { font-size: clamp(16px,5cqw,24px); }
+.flight-result-actions button:last-child { background: #ffe000; }
+.upgrade-panel { position: absolute; top: auto; bottom: 2%; margin: 0 auto; width: 89.6%; max-height: 86%; padding: 12px; border: 0; border-radius: 20px; background: #25203de8; }
+.upgrade-heading { gap: 6px; margin-bottom: 12px; }
+.upgrade-heading h2 { font-size: 18px; margin-right: auto; }
+.upgrade-heading button { font-size: 26px; padding: 0 4px; }
+.upgrade-wallet { margin: 0; }
+.upgrade-wallet::before { content: 'Ⓢ'; color: #ffe000; }
+.upgrade-panel .stats-row button { grid-template-columns: 24px 1fr auto; gap: 4px 8px; min-height: 68px; padding: 10px; background: #19162ca6; border: 0; --upgrade-color: #ff951c; }
+.upgrade-panel .stats-row button[data-upgrade='fuel'] { --upgrade-color: #16cd69; }
+.upgrade-panel .stats-row button[data-upgrade='money'] { --upgrade-color: #ffe000; }
+.upgrade-panel .stats-row button > span { grid-column: 2; }
+.upgrade-panel .stats-row strong { grid-column: 2; font-size: 12px; color: var(--upgrade-color); }
+.upgrade-panel .stats-row .upgrade-icon { grid-column: 1; grid-row: 1 / 3; color: var(--upgrade-color); }
+.upgrade-panel .stats-row small { grid-column: 3; padding: 6px 8px; border-radius: 15px; background: var(--upgrade-color); color: #171323; font-weight: 700; }
+.upgrade-panel .stats-row small::before { content: 'Ⓢ '; }
+.upgrade-feedback { margin: 8px 2px; min-height: 16px; font-size: 10px; }
+.upgrade-done { display: none; }
+.voice-start { pointer-events: auto; touch-action: manipulation; color: #fff; background: #30294dcc; border: 1px solid #ffffff50; border-radius: 18px; padding: 12px 18px; font-weight: 700; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .vibrating .rocket-thruster { animation: none; } }
+
+.voice-feedback { display: block; margin: 10px auto 0; max-width: 270px; font-size: 12px; line-height: 1.45; font-weight: 500; color: #fff; text-wrap: balance; }
+
+/* Distance ticks travel down the viewport independently of the scenery. */
+.distance-markers { top: 17%; bottom: 21%; display: block; width: 74px; overflow: hidden; contain: layout paint; }
+.distance-markers span { position: absolute; top: 0; left: 0; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; transition: transform 50ms linear; }

@@ -14,8 +14,8 @@ async function fixture(options = {}) {
   let releaseStart, releaseSubmit;
   const submitGate = options.delaySubmit ? new Promise(resolve => { releaseSubmit = resolve; }) : null;
   const startGate = options.delayStart ? new Promise(resolve => { releaseStart = resolve; }) : null;
-  const stats = { speed: 30, fuel: 40, money: 1.5 };
-  const validator = moonValidator({ resolveLoadout: async () => stats });
+  const stats = { speed: 300, fuel: 40, money: 1.5 };
+  const validator = moonValidator({ resolveLoadout: async () => stats, allowFailures: true });
   const storage = new Map();
   const sessions = new Map();
   const calls = [];
@@ -56,7 +56,7 @@ async function fixture(options = {}) {
       if (body.action === 'submit') {
         if (submitGate) await submitGate;
         assert.equal(body.score, undefined, 'client never submits an authoritative score');
-        if (!run.complete) return response({ error: 'A server-verified completed game is required.' }, 400);
+        if (!run.complete && !run.failed) return response({ error: 'A server-verified completed game is required.' }, 400);
         if (!run.consumed) { submits++; run.consumed = true; }
         if (!lost && options.lose === 'submit') { lost = true; throw new Error('Response lost'); }
         return response({ playerName: 'MoonRabbit', replayed: true });
@@ -82,7 +82,7 @@ async function fixture(options = {}) {
   const source = readFileSync('src/web/main.js', 'utf8');
   vm.runInContext(source.slice(0, source.lastIndexOf('\nloadEconomy();')), context);
   const run = code => vm.runInContext(code, context);
-  run('state.speedMultiplier=30; state.fuelCapacity=40; state.moneyMultiplier=1.5; leaderboard.view.online=true;');
+  run('state.speedMultiplier=300; state.fuelCapacity=40; state.moneyMultiplier=1.5; leaderboard.view.online=true;');
   async function fly({ land = true, interruptHold = false, resume = false } = {}) {
     if (!resume) run('reset(); startGame();');
     await flush();
@@ -130,23 +130,23 @@ test('a real Moon flight validates distance, uninterrupted hold, claps and coins
   assert.equal(f.submits, 1);
   const session = [...f.sessions.values()][0];
   assert.equal(session.score, session.arrivalAt - Date.parse(session.state.startedAt));
-  assert.equal(session.earned, 292);
-  assert.equal(f.run('state.lastEarnedCoins'), 292);
+  assert.equal(session.earned, 5765);
+  assert.equal(f.run('state.lastEarnedCoins'), 5765);
   f.run('completeLanding(); settleRun(true);');
   await f.run('leaderboard.landed()');
   await f.run('leaderboard.retry()');
   assert.equal(f.submits, 1);
 });
 
-test('failed flights and reset flights never submit', async () => {
+test('failed flights submit once and abandoned flights do not submit', async () => {
   const f = await fixture();
   await f.fly({ land: false });
   assert.equal(f.run('state.phase'), 'failed');
   await f.run('leaderboard.landed()');
-  assert.equal(f.submits, 0);
+  assert.equal(f.submits, 1);
   f.run('reset(); startGame(); reset();');
   await f.run('leaderboard.landed()');
-  assert.equal(f.submits, 0);
+  assert.equal(f.submits, 1);
 });
 
 for (const lose of ['arrival', 'frames', 'finish', 'submit']) {
@@ -194,16 +194,16 @@ test('Launch flies immediately during a delayed registration and keeps early fra
   assert.equal(f.calls.filter(c => c.body.action === 'profile').length, 0);
   f.advance(500);
   f.run('setMeasuredDb(60); updateGame(500);');
-  assert.equal(f.run('state.distanceKm'), 900);
+  assert.equal(f.run('state.distanceKm'), 9000);
   assert.equal(f.run('state.fuelRemaining'), 39.5);
   f.releaseStart();
   await f.run('registration');
-  assert.equal(f.run('state.distanceKm'), 900);
+  assert.equal(f.run('state.distanceKm'), 9000);
   assert.equal(f.run('state.fuelRemaining'), 39.5);
   assert.equal(f.run('state.tryCount'), 1);
   await f.fly({ resume: true });
   assert.equal(f.submits, 1);
-  assert.equal([...f.sessions.values()][0].earned, 292);
+  assert.equal([...f.sessions.values()][0].earned, 5765);
   assert.equal(f.run('leaderboard.pendingCount()'), 0);
 });
 
@@ -216,7 +216,7 @@ test('a rejected server registration reports the error without freezing or resta
   assert.equal(f.run('leaderboard.view.status'), 'error');
   f.advance(500);
   f.run('setMeasuredDb(60); updateGame(500);');
-  assert.equal(f.run('state.distanceKm'), 900);
+  assert.equal(f.run('state.distanceKm'), 9000);
   assert.equal(f.submits, 0);
 });
 
@@ -229,12 +229,12 @@ test('Replay starts visually while the previous result syncs, with separate serv
   assert.equal(f.run('state.phase'), 'flying');
   f.advance(500);
   f.run('setMeasuredDb(60); updateGame(500);');
-  assert.equal(f.run('state.distanceKm'), 900);
+  assert.equal(f.run('state.distanceKm'), 9000);
   assert.equal(f.sessions.size, 1);
   f.releaseSubmit();
   await f.run('nextRegistration');
   assert.equal(f.sessions.size, 2);
-  assert.equal(f.run('state.distanceKm'), 900);
+  assert.equal(f.run('state.distanceKm'), 9000);
   await f.fly({ resume: true });
   assert.equal(f.submits, 2);
   assert.equal(f.run('leaderboard.pendingCount()'), 0);

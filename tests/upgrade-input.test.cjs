@@ -24,12 +24,12 @@ function fixture() {
 test('click-only activation buys an upgrade, deducts once and persists it', () => {
   const { run, fire } = fixture();
   fire('click');
-  assert.equal(run('state.speedMultiplier'), 12);
-  assert.equal(run('state.coins'), 108);
+  assert.equal(run('state.speedMultiplier'), 16);
+  assert.equal(run('state.coins'), 103);
   assert.equal(run('state.upgradeFeedback'), 'Upgrade complete!');
   run('loadEconomy()');
-  assert.equal(run('state.speedMultiplier'), 12);
-  assert.equal(run('state.coins'), 108);
+  assert.equal(run('state.speedMultiplier'), 16);
+  assert.equal(run('state.coins'), 103);
 });
 
 test('pointer press and release charge only once; disabled buttons never buy', () => {
@@ -37,18 +37,18 @@ test('pointer press and release charge only once; disabled buttons never buy', (
   fire('pointerdown');
   assert.equal(run('state.coins'), 158);
   fire('click');
-  assert.equal(run('state.coins'), 108);
+  assert.equal(run('state.coins'), 103);
   button.disabled = true;
   fire('pointerdown'); fire('click');
-  assert.equal(run('state.coins'), 108);
+  assert.equal(run('state.coins'), 103);
 });
 
 test('fuel purchase immediately updates the waiting dashboard', () => {
   const { run, fire, button } = fixture();
   button.dataset.upgrade = 'fuel';
   fire('click');
-  assert.equal(run('state.fuelCapacity'), 11);
-  assert.equal(run('state.fuelRemaining'), 11);
+  assert.equal(run('state.fuelCapacity'), 13);
+  assert.equal(run('state.fuelRemaining'), 13);
 });
 
 test('online purchase errors are reported and a retry clears the error', async () => {

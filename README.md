@@ -36,25 +36,35 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 ## Upgrade progression
 
 A fresh save reaches the Moon in 9–10 runs at a steady 65–75 dB when the player
-completes hold/clap prompts and buys engine and fuel upgrades alternately.
-Either purchase order is supported. 65–70 dB lands on run 10; 75 dB lands on run 9. At 55 dB it takes 13 runs. Louder voices arrive sooner;
-quieter voices or failed challenges take longer. There is no attempt-count unlock.
+completes the hold/clap challenges and spends earnings on alternating Speed/Fuel
+purchases, or cycles Speed/Fuel/Money. Both engine-first and fuel-first are tested.
+Quieter input, unspent coins and failed challenges can take longer; there is no
+attempt-count unlock.
 
-- Speed is exactly `dB × Speed` km/s (58 dB × 10 = 580 km/s).
-- Fuel burns at 1 t/second in every active phase, independent of sound or speed. Default 10 t lasts 10 seconds, including challenges.
-- Every run pays `floor(distance / 100 × Money)` once, without base or landing bonuses.
-- Engine/fuel purchases add 1. Current-stat bands 10–20 / 21–30 / 31–40 / 41–50 / 51+ cost 50 / 100 / 150 / 200 / 250 coins. Fuel 22 → 23 costs 100 coins.
-- Money purchases add 0.1. Current-stat bands 1–2 / 2.1–3 / 3.1–4 / 4.1–5 / above 5 use the same five costs. The overlapping 5 boundary belongs to the explicit 4.1–5 band.
-- Costs and gameplay distances come from the [SOTM source sheet](https://docs.google.com/spreadsheets/d/1Z7Bft-n0MNSQMPITQEgAo0O_mGSvueM2QRrhg_HDNoA/edit), snapshot imported 2026-10-15. Source ranges: `dB - Speed!A2:F9`, `Atmospheric Layers!A3:D10`. Game distances total 19,500 and backgrounds follow those boundaries. Left markers use the sheet’s reference altitudes (12 / 50 / 85 / 600 / 10,000 km), then the Moon’s average 384,400 km; those labels are not reward distances. This is a bundled snapshot, not a live Google Sheets connection.
-- Downward foreground streaks respond immediately to speed, independently of the economy and fuel clock. Each atmosphere image appears twice; space once.
-- Purchases are available between runs. Existing saved upgrades/coins are preserved.
-- UFOs remain disabled; continuous five-second hold and three claps remain required.
+- The actual destination is **384,399 km**. Speed remains exactly `dB × Speed` km/s.
+- Fuel burns at 1 t/second in every active phase. Default 10 t lasts ten seconds.
+- Every completed run pays `floor(distance / 100 × Money)` once.
+- Speed becomes `ceil(current × 1.4)`, Fuel increases by 3 t, Money by 0.1.
+- Prices are rounded to the nearest five coins, with a minimum of 50: Speed
+  `50 × (Speed/10)^1.3`, Fuel `50 × (Fuel/10)`, Money `50 × Money^1.5`.
+- The real destination remains 384,399 km. Background artwork travels briskly early in a flight using a logarithmic
+  distance scale and a smoothly limited camera velocity. Delayed frames and powerful
+  engines cannot cause instant screen jumps. This does not change flight distance. Each atmospheric image appears twice and space once.
+  Ruler labels use actual game distance, move downward continuously, and remain
+  multiples of five. Their scale is fixed per flight based on the engine; it never
+  changes suddenly at a layer boundary. These are game visuals, not a scale model.
+- Distance and saved results represent travel of the rocket nose. The ruler, personal
+  and community records align with the visible tip; the minimap shows only Best (B),
+  aligned with the miniature rocket nose. Score/reward formulas are unchanged.
+- Purchases are available between flights; prior saved balances are preserved.
+- UFOs and Separation remain disabled; five continuous seconds at 50–60 dB and
+  three claps remain required. Rocket vibration follows reduced-motion settings.
 
 Run the progression and gameplay regressions with `node --test tests/*.test.cjs`.
 
 ## Moon landing leaderboard — one secure server
 
-The existing [Web Playtest](https://shout-moon-playtest-ivy.fancyolm1.chatgpt.site)
+The existing [Web Playtest](https://shout-moon-playtest-ivy.kang12365111075.chatgpt.site)
 serves both the game and `/api/leaderboard` from **one Sites Worker deployment**.
 Its private D1 storage binding is not a second application/API server. There is no
 separate scoring, security, legacy, migration or leaderboard service. The iOS
@@ -67,22 +77,21 @@ to the existing Site's D1 runtime, with Moon-specific progression and migration
 operations on the same endpoint. It does not deploy the repository's separate
 Node/PostgreSQL example server or connect clients directly to a database.
 
-- A successful Moon landing automatically registers **server-measured time to the
-  Moon in milliseconds**, shortest first. The board retains each player's fastest
-  time per period; ties use the earlier achievement. Display format is `m:ss.mmm`.
-- Timing starts with server launch approval and ends when the server receives the
-  landing-complete notification. Hold, claps, landing animation and network transit
-  count. The first arrival receipt is frozen before replay uploads, so upload/retry
-  delays cannot alter an accepted time. Offline arrival is timed when it reaches
-  the server. The receipt alone earns nothing; the complete replay must validate.
-- Coins still reward gameplay and buy upgrades. Legacy coin rankings remain in
-  `moon_scores`; time rankings use `moon_time_scores`, never reinterpreting coins
-  as milliseconds. Existing balances, upgrades and local saves are preserved.
-- Failed flights earn server-calculated coins but never enter the ranking.
-- Top 100, personal rank, current/past periods, All months and nickname editing are
-  available from the ranking panel. Reads do not register names or scores.
-- Toronto calendar boundaries apply. Periods roll forward in a newer month only
-  after reaching 1,000 participants. No score records are automatically deleted.
+- Every verified completed flight, including failures, records a score of
+  `distance (km) − elapsed time (seconds)`, highest first. The server measures time
+  from launch approval to the first completion receipt; upload retries do not
+  change the accepted time. Scores are calculated from validated flight frames.
+- Each player has one best score per Toronto calendar week (Monday midnight).
+  Weekly views reset automatically; historical flights remain available in All time.
+- Other players' weekly best heights appear at their altitude, with names shortened
+  to seven characters. Moon arrivals appear as a trophy beside the minimap Moon.
+- Names are automatically assigned using Subway's adjective+noun+two-digit style;
+  existing names are preserved, and manual renames retain the monthly quota.
+- New scores live in `moon_flight_scores`. Legacy coin/time tables remain intact
+  and are not mixed with the new distance-minus-time score. Existing in-progress
+  October flights can still settle rewards under their original distance rules.
+- Top 100, personal rank, current/past weeks, All time and nickname editing are
+  available from the ranking panel. Reading rankings never creates a score.
 - The server issues an opaque 256-bit bearer credential and stores only its hash.
   The client stores its credential per API endpoint. Credentials never appear in
   public rankings. HTTPS, origin checks, request-size/rate limits and ownership
@@ -94,8 +103,7 @@ Node/PostgreSQL example server or connect clients directly to a database.
   settlement, score submission and migration redemption are replay-safe.
 - Completed runs persist in the client outbox on network failure; **Retry submission**,
   reconnect or restart resumes them. A failed start never fabricates a verified run.
-  Expired runs and first submissions from previous Toronto months remain visible
-  errors. An unfinished flight can be abandoned without reward.
+  Expired runs remain visible errors. An unfinished flight can be abandoned without reward.
 
 Microphone samples still originate on the device; this does not attest physical
 sound or stop a modified client from fabricating otherwise-valid input. The server

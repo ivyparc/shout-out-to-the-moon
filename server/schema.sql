@@ -78,3 +78,19 @@ CREATE TABLE `moon_time_scores` (
 CREATE INDEX `moon_time_ranking` ON `moon_time_scores` (`period`,`score`,`achieved_at`);--> statement-breakpoint
 ALTER TABLE `moon_runs` ADD `arrival_at` integer;--> statement-breakpoint
 ALTER TABLE `moon_runs` ADD `elapsed_ms` integer;
+
+CREATE TABLE `moon_flight_scores` (
+	`run_id` text PRIMARY KEY NOT NULL,
+	`player` text NOT NULL,
+	`period` text NOT NULL,
+	`score` real NOT NULL,
+	`distance` real NOT NULL,
+	`elapsed_ms` integer NOT NULL,
+	`landed` integer NOT NULL,
+	`achieved_at` integer NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `moon_runs`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`player`) REFERENCES `moon_players`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE INDEX `moon_flight_week_score` ON `moon_flight_scores` (`period`,`score`,`achieved_at`);--> statement-breakpoint
+CREATE INDEX `moon_flight_player` ON `moon_flight_scores` (`player`,`period`);

@@ -195,7 +195,7 @@
             if (remaining > 0) await wait(remaining);
             // Freeze server arrival time before potentially slow frame uploads.
             // Repeating this after a lost response returns the original receipt.
-            if (run.landed !== false && !run.arrivalReceived) {
+            if (!run.arrivalReceived) {
               await api('POST', { action: 'arrival', runId: run.runId });
               run.arrivalReceived = true;
               write(`${prefix}.pending`, pending);
@@ -212,6 +212,7 @@
             let result;
             if (run.landed === false) {
               result = await api('POST', { action: 'event', runId: run.runId, event: { type: 'finish' } });
+              result = { ...result, ...await api('POST', { action: 'submit', runId: run.runId }) };
             } else try { result = await api("POST", { action: "submit", runId: run.runId, playerName: view.playerName || undefined }); }
             catch (error) {
               if (error.status !== 400) throw error;

@@ -1,6 +1,10 @@
 const BASE_WIDTH = 1179;
 const BASE_HEIGHT = 2556;
 const BASE_RATIO = BASE_WIDTH / BASE_HEIGHT;
+// Visible nose pixels in the supplied sprites (exclude transparent padding).
+const ROCKET_TIP_Y = 3 / 256;
+const MINI_ROCKET_TIP_Y = 1 / 64;
+const MINI_ROCKET_SIZE = 24;
 const UFO_TRIGGER_PROGRESS = 0.03;
 const UFO_END_PROGRESS = 0.62;
 const MOON_TRIGGER_PROGRESS = 1;
@@ -51,26 +55,18 @@ const DEFAULT_STATS = {
   coins: 0,
 };
 
-// Source: SOTM, "dB - Speed"!A2:F9 and "Atmospheric Layers"!A3:D10.
-// https://docs.google.com/spreadsheets/d/1Z7Bft-n0MNSQMPITQEgAo0O_mGSvueM2QRrhg_HDNoA/edit
-// Snapshot imported 2026-10-15; costs use the current stat before purchase.
+// November balance: direct dB × Speed, 1 tonne/second, and 9–10 flights
+// at 65–75dB with alternating engine/fuel purchases from a fresh save.
 const BALANCE = { fuelBurnPerSecond: 1 };
-const UPGRADE_COST_TIERS = [
-  { max: 20, cost: 50 },
-  { max: 30, cost: 100 },
-  { max: 40, cost: 150 },
-  { max: 50, cost: 200 },
-  { max: Infinity, cost: 250 },
-];
 
 const DISTANCE_SEGMENTS = [
-  { name: "Launch Pad", distance: 1000 },
-  { name: "Troposphere", distance: 3000 },
-  { name: "Stratosphere", distance: 3000 },
-  { name: "Mesosphere", distance: 3500 },
-  { name: "Thermosphere", distance: 3000 },
-  { name: "Exosphere", distance: 3000 },
-  { name: "Space", distance: 3000 },
+  { name: "Launch Pad", distance: 0 },
+  { name: "Troposphere", distance: 12 },
+  { name: "Stratosphere", distance: 38 },
+  { name: "Mesosphere", distance: 35 },
+  { name: "Thermosphere", distance: 515 },
+  { name: "Exosphere", distance: 9400 },
+  { name: "Space", distance: 374399 },
 ];
 
 const TOTAL_DISTANCE_KM = DISTANCE_SEGMENTS.reduce((sum, segment) => sum + segment.distance, 0);
@@ -172,6 +168,7 @@ const state = {
   db: 0,
   maxDb: 0,
   progress: 0,
+  // Distance travelled by the rocket nose, shared by all scores and records.
   distanceKm: 0,
   fuelRemaining: DEFAULT_STATS.fuel,
   speedMultiplier: DEFAULT_STATS.speed,
@@ -193,6 +190,8 @@ const state = {
   holdOutMs: 0,
   holdStartedAt: 0,
   moonSceneStartScroll: 0,
+  sceneScroll: 0,
+  sceneScrollVelocity: 0,
   status: "",
   speechStatus: "",
   heardSpeech: "",
@@ -215,7 +214,7 @@ let leaderboardProfileOpen = false;
 leaderboard?.subscribe(() => {
   const view = leaderboard.view;
   if (view.online && view.profile) {
-    if (!leaderboardMode) { state.flightHistory = []; loadFlightHistory(); renderFlightMarkers(); }
+    if (!leaderboardMode) { state.flightHistory = []; loadFlightHistory(); state.tryCount = view.profile.tries; renderFlightMarkers(); }
     leaderboardMode = true;
     if (!isRunningPhase() && state.phase !== "landing") {
       state.speedMultiplier = view.profile.speed;
@@ -223,12 +222,12 @@ leaderboard?.subscribe(() => {
       state.moneyMultiplier = view.profile.money;
     }
     state.coins = view.profile.coins;
-    state.tryCount = isRunningPhase() || state.phase === "landing"
-      ? Math.max(state.tryCount, view.profile.tries) : view.profile.tries;
+    state.tryCount = Math.max(state.tryCount, view.profile.tries);
     if (["waitingLaunch", "preparing"].includes(state.phase)) state.fuelRemaining = state.fuelCapacity;
     updateUi();
   }
   if (!view.online) leaderboardMode = false;
+  renderCommunityMarkers();
   renderLeaderboard();
 });
 
@@ -268,14 +267,14 @@ function renderLeaderboard() {
   const ko = state.language === "ko";
   const view = leaderboard?.view;
   const messages = ko ? {
-    unconfigured: "랭킹 서버 연결 준비 중이에요.", ready: "달까지 가장 빠르게! 짧은 시간이 높은 순위예요.",
+    unconfigured: "랭킹 서버 연결 준비 중이에요.", ready: "점수 = 거리(km) − 시간(초). 매주 월요일 새 주간 기록을 시작합니다.",
     starting: "비행 준비 중…", loading: "달 탐험 기록을 불러오는 중…",
-    submitting: "착륙 기록을 등록하고 있어요…", submitted: "새로운 달 착륙 기록이 등록됐어요!",
+    submitting: "비행 기록을 등록하고 있어요…", submitted: "비행 기록이 등록됐어요!",
     error: "연결을 확인하고 새로고침해 주세요.",
   } : {
-    unconfigured: "Getting the rankings ready.", ready: "Fastest to the Moon wins!",
+    unconfigured: "Getting the rankings ready.", ready: "Score = distance (km) − time (s). New week every Monday.",
     starting: "Preparing your flight…", loading: "Loading Moon explorers…",
-    submitting: "Saving your landing…", submitted: "Your Moon landing is on the board!",
+    submitting: "Saving your flight…", submitted: "Your flight is on the board!",
     error: "Check your connection and refresh.",
   };
   status.textContent = messages[leaderboardSetupError ? "error" : view?.status || "unconfigured"];
@@ -287,34 +286,34 @@ function renderLeaderboard() {
   const own = snapshot?.currentPlayer;
   const subtitle = root.querySelector(".leaderboard-subtitle");
   if (subtitle) subtitle.textContent = own
-    ? (ko ? `내 순위 #${own.rank} · 나의 가장 빠른 달 여행` : `Your rank #${own.rank} · Your fastest Moon trip`)
-    : (ko ? "나의 가장 빠른 달 여행" : "Your fastest trip to the Moon");
+    ? (ko ? `내 순위 #${own.rank} · 나의 최고 비행 점수` : `Your rank #${own.rank} · Your best flight score`)
+    : (ko ? "나의 최고 비행 점수" : "Your best flight score");
   root.querySelector('[data-leaderboard="profile"]')?.setAttribute("aria-expanded", String(leaderboardProfileOpen));
   const draftName = (leaderboardProfileOpen ? root.querySelector('.leaderboard-name input')?.value : null) ?? view?.playerName ?? '';
   const row = (entry, personal = false) => `<tr class="${personal ? 'my-ranking' : entry.rank === own?.rank ? 'own-list-row' : ''}">
     <td><span class="rank-number rank-${entry.rank || 0}">${escapeHtml(entry.rank || "—")}</span></td>
     <td><span class="ranking-name">${escapeHtml(entry.name || (ko ? "나의 기록" : "Your record"))}</span>${personal ? `<span class="ranking-you">${ko ? "나" : "YOU"}</span>` : entry.isToday ? `<span class="ranking-today">${ko ? '오늘' : 'Today'}</span>` : ''}</td>
-    <td><span class="ranking-time">${escapeHtml(formatRankingTime(entry.score))}</span></td></tr>`;
+    <td><span class="ranking-time">${escapeHtml(Number.isFinite(entry.score) ? formatStat(entry.score) : "—")}</span></td></tr>`;
   panel.innerHTML = `
     <div class="leaderboard-toolbar" ${leaderboardProfileOpen ? 'inert' : ''}>
       <label class="leaderboard-period-label"><span class="sr-only">${ko ? "기간" : "Period"}</span><select data-leaderboard-period ${disabled ? "disabled" : ""}>
-        ${[["active", ko ? "현재 시즌" : "This season"], ["all", ko ? "전체 기록" : "All time"], ...(snapshot?.periods || []).map(period => [period, period])].map(([value, label]) => `<option value="${escapeHtml(value)}" ${view?.period === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+        ${[["active", ko ? "이번 주" : "This week"], ["all", ko ? "전체 기록" : "All time"], ...(snapshot?.periods || []).map(period => [period, period])].map(([value, label]) => `<option value="${escapeHtml(value)}" ${view?.period === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
       </select></label>
-      <span class="leaderboard-sort">${ko ? "빠른 시간 순" : "Fastest first"}</span>
+      <span class="leaderboard-sort">${ko ? "높은 점수 순" : "Highest score first"}</span>
       <button type="button" class="leaderboard-refresh" data-leaderboard="refresh" aria-label="${ko ? "새로고침" : "Refresh"}" ${disabled ? "disabled" : ""}>↻</button>
     </div>
     ${view?.error || leaderboardSetupError ? `<p class="leaderboard-error" role="alert">${escapeHtml(view?.error || leaderboardSetupError)}</p>` : ""}
     ${leaderboard?.pendingCount() ? `<button type="button" class="leaderboard-retry" data-leaderboard="retry">${ko ? "기록 등록 재시도" : "Retry your landing"} (${leaderboard.pendingCount()})</button>` : ""}
     <div class="leaderboard-list" ${leaderboardProfileOpen ? 'inert' : ''} tabindex="0" aria-label="${ko ? "순위 목록" : "Rankings"}">
-      <table><thead><tr><th scope="col">${ko ? "순위" : "Rank"}</th><th scope="col">${ko ? "이름" : "Name"}</th><th scope="col">${ko ? "도착 시간" : "Time"}</th></tr></thead>
+      <table><thead><tr><th scope="col">${ko ? "순위" : "Rank"}</th><th scope="col">${ko ? "이름" : "Name"}</th><th scope="col">${ko ? "점수" : "Score"}</th></tr></thead>
       <tbody class="leaderboard-personal">${row(own || { name: view?.playerName }, true)}</tbody>
       <tbody class="leaderboard-entries">${rows.map(entry => row(entry)).join("")}
-      ${!rows.length ? `<tr><td colspan="3" class="leaderboard-empty"><img src="${asset("MiniMoon_64.png")}" alt="" /><strong>${ko ? "첫 달 탐험가를 기다려요!" : "A little Moon. A big adventure."}</strong><p>${view?.status === 'loading' ? (ko ? "기록을 불러오고 있어요…" : "Loading the flight log…") : (ko ? "달에 착륙하면 기록이 여기에 나타나요." : "Land on the Moon to leave your first record.")}</p><span aria-hidden="true">✦ · ✧ · ✦</span></td></tr>` : ""}
+      ${!rows.length ? `<tr><td colspan="3" class="leaderboard-empty"><img src="${asset("MiniMoon_64.png")}" alt="" /><strong>${ko ? "첫 달 탐험가를 기다려요!" : "A little Moon. A big adventure."}</strong><p>${view?.status === 'loading' ? (ko ? "기록을 불러오고 있어요…" : "Loading the flight log…") : (ko ? "비행이 끝나면 기록이 여기에 나타나요." : "Finish any flight to leave your first record.")}</p><span aria-hidden="true">✦ · ✧ · ✦</span></td></tr>` : ""}
       </tbody></table>
     </div>
     <section class="leaderboard-profile" ${leaderboardProfileOpen ? '' : 'hidden'} aria-label="${ko ? "내 프로필" : "Your profile"}">
       <h3>${ko ? "나의 우주비행사" : "Your Moon explorer"}</h3>
-      <form class="leaderboard-name"><label>${ko ? "닉네임" : "Nickname"}<input name="playerName" maxlength="24" value="${escapeHtml(draftName)}" placeholder="${ko ? "첫 착륙 시 자동 생성" : "Assigned on first landing"}" ${disabled ? "disabled" : ""}></label><button type="submit" ${disabled ? "disabled" : ""}>${ko ? "저장" : "Save"}</button></form>
+      <form class="leaderboard-name"><label>${ko ? "닉네임" : "Nickname"}<input name="playerName" maxlength="24" value="${escapeHtml(draftName)}" placeholder="${ko ? "자동 생성" : "Randomly assigned"}" ${disabled ? "disabled" : ""}></label><button type="submit" ${disabled ? "disabled" : ""}>${ko ? "저장" : "Save"}</button></form>
       ${leaderboardProfileOpen && view?.error ? `<p class="leaderboard-error" role="alert">${escapeHtml(view.error)}</p>` : ""}
       <p class="leaderboard-profile-note">${ko ? "닉네임은 한 달에 3번 바꿀 수 있어요." : "You can change your nickname 3 times a month."}</p>
       <button type="button" class="leaderboard-profile-done" data-leaderboard="profile">${ko ? "순위로 돌아가기" : "Back to rankings"}</button>
@@ -513,44 +512,64 @@ function bestFlight() {
   return state.flightHistory.reduce((best, run) => !best || run.distance > best.distance ? run : best, null);
 }
 
-function flightMarkerY(distance) {
-  // Align a past endpoint with the rocket when this run reaches that distance.
+function flightAnchorY() {
   const sky = root.querySelector(".sky");
   const rocket = root.querySelector(".rocket-art");
-  let anchor = 0.65;
   if (sky && rocket) {
     const skyRect = sky.getBoundingClientRect();
     const rect = rocket.getBoundingClientRect();
-    if (skyRect.height) anchor = (rect.top + rect.height / 2 - skyRect.top) / skyRect.height;
+    if (skyRect.height) return (rect.top + rect.height * ROCKET_TIP_Y - skyRect.top) / skyRect.height;
   }
-  // The final space image is stationary; retain distinct height markers there.
-  const spaceLength = DISTANCE_SEGMENTS.at(-1).distance;
-  const coordinate = (km) => getWorldScrollRatio(km / TOTAL_DISTANCE_KM) +
-    clamp((km - (TOTAL_DISTANCE_KM - spaceLength)) / spaceLength, 0, 1);
-  return anchor + coordinate(state.distanceKm) - coordinate(distance);
+  return .56 - .8 * (178 - 126 * ROCKET_TIP_Y) / getSkyHeight();
+}
+
+function flightMarkerY(distance) {
+  const ruler = distanceRulerLayout();
+  return flightAnchorY() + (state.distanceKm - distance) / ruler.step * ruler.pitch / getSkyHeight();
 }
 
 function displayedFlights() {
   const best = bestFlight();
-  const last = state.flightHistory.at(-1);
-  if (!best) return [];
-  // One label when the latest flight reaches the same height as Best.
-  return !last || last === best || Math.abs(last.distance - best.distance) < 1e-6
-    ? [best] : [best, last];
+  return best ? [best] : [];
+}
+
+function minimapPosition(progress) {
+  const fraction = clamp(progress, 0, 1);
+  return {
+    rocketBottom: `calc(${fraction * 100}% - ${fraction * MINI_ROCKET_SIZE}px)`,
+    // The dot is level with the nose, not the sprite bottom or centre.
+    tipBottom: `calc(${fraction * 100}% + ${(1 - fraction - MINI_ROCKET_TIP_Y) * MINI_ROCKET_SIZE}px)`,
+  };
 }
 
 function renderFlightMarkers() {
   const best = bestFlight();
   const markers = root.querySelector(".flight-markers");
   const map = root.querySelector(".history-map");
-  if (markers) markers.innerHTML = displayedFlights().filter(run => run.distance > 0).map(run =>
-    `<div class="flight-marker ${run === best ? "best" : ""}" data-distance="${run.distance}" data-try="${run.try}"><i></i><span>${run === best ? "Best " : "Last "}T${run.try}</span></div>`).join("");
-  if (map) map.innerHTML = displayedFlights().map(run => {
-    const label = run === best ? "Best" : "Last";
-    const nearby = run !== best && Math.abs(run.distance - best.distance) / TOTAL_DISTANCE_KM * Math.max(1, map.clientHeight - 24) < 18;
-    const sharedLast = run === best && displayedFlights().length === 1 ? ` · Last T${state.flightHistory.at(-1).try}` : "";
-    return `<span class="history-label${nearby ? " nearby" : ""}" style="bottom:calc(${run.distance / TOTAL_DISTANCE_KM * 100}% - ${run.distance / TOTAL_DISTANCE_KM * 24}px)" title="${label} · T${run.try}${sharedLast}"><span>${label}</span><i class="history-dot ${run === best ? "best" : ""}"></i></span>`;
-  }).join("");
+  const last = state.flightHistory.at(-1);
+  const leftRuns = best && last && best !== last && Math.abs(best.distance - last.distance) > 1e-6 ? [best, last] : last ? [last] : [];
+  if (markers) markers.innerHTML = leftRuns.map(run =>
+    `<div class="flight-marker ${run === last ? "latest" : "best"}" data-distance="${run.distance}" data-try="${run.try}"><i></i><span>${run === last ? `T${run.try}` : "Best"}</span></div>`).join("");
+  if (map) map.innerHTML = displayedFlights().map(run =>
+    `<span class="history-label" style="bottom:${minimapPosition(run.distance / TOTAL_DISTANCE_KM).tipBottom}" title="Best · T${run.try}"><i class="history-dot best"></i><span>B</span></span>`
+  ).join("");
+}
+
+let communitySnapshot = null;
+function renderCommunityMarkers() {
+  const container = root.querySelector('.community-markers');
+  const snapshot = leaderboard?.view.snapshot;
+  if (!container) return;
+  if (communitySnapshot !== snapshot || !container.dataset.ready) {
+    communitySnapshot = snapshot;
+    container.dataset.ready = 'true';
+    container.innerHTML = (snapshot?.markers || []).map(entry => `<div class="community-marker" data-distance="${Number(entry.distance)}" title="${escapeHtml(entry.name)}"><i></i><span>${escapeHtml(Array.from(entry.name || '').slice(0, 7).join(''))}</span></div>`).join('');
+  }
+  root.querySelectorAll('.community-marker').forEach(marker => {
+    const y = flightMarkerY(Number(marker.dataset.distance));
+    marker.style.top = `${y * 100}%`;
+    marker.hidden = y < .05 || y > .94;
+  });
 }
 
 function getLanguage() {
@@ -600,16 +619,13 @@ function syncProgressFromDistance() {
 
 function upgradeCost(type) {
   if (!["speed", "fuel", "money"].includes(type)) return Infinity;
-  // Money's 1–2 / 2.1–3 bands use the same table in tenths.
-  const value = type === "money" ? Math.round(state.moneyMultiplier * 10)
-    : type === "speed" ? state.speedMultiplier : state.fuelCapacity;
-  return UPGRADE_COST_TIERS.find((tier) => value <= tier.max).cost;
+  const value = type === "speed" ? state.speedMultiplier : type === "fuel" ? state.fuelCapacity : state.moneyMultiplier * 10;
+  return Math.max(50, Math.round(50 * (value / 10) ** (type === "speed" ? 1.3 : type === "fuel" ? 1 : 1.5) / 5) * 5);
 }
-
 function nextUpgradeValue(type) {
-  if (type === "money") return Number((state.moneyMultiplier + 0.1).toFixed(1));
-  if (type === "fuel") return state.fuelCapacity + 1;
-  return state.speedMultiplier + 1;
+  if (type === "money") return Math.min(10000, Number((state.moneyMultiplier + 0.1).toFixed(1)));
+  if (type === "fuel") return Math.min(600, state.fuelCapacity + 3);
+  return Math.min(10000, Math.ceil(state.speedMultiplier * 1.4));
 }
 
 function applyUpgrade(type) {
@@ -654,31 +670,48 @@ function getCurrentSegment() {
   return { name: "Moon", index: DISTANCE_SEGMENTS.length, start: TOTAL_DISTANCE_KM, end: TOTAL_DISTANCE_KM };
 }
 
-// Presentation only: gameplay distances, speed, rewards and timing are unchanged.
-// Approximate NASA layer boundaries; the last range approaches the Moon.
-const DISPLAY_ALTITUDE_BOUNDARIES_KM = [0, 12, 50, 85, 600, 10000, 384400];
-
-function getDisplayAltitudeKm(worldCoordinate) {
-  const coordinate = clamp(worldCoordinate, 0, ATMOSPHERE_STRIPS.length);
-  let start = 0;
-  for (let layer = 0; layer < ATMOSPHERE_BACKGROUNDS.length; layer += 1) {
-    const count = ATMOSPHERE_STRIPS.filter((name) => name === ATMOSPHERE_BACKGROUNDS[layer]).length;
-    const end = start + count;
-    if (coordinate <= end) {
-      const fraction = (coordinate - start) / count;
-      const low = DISPLAY_ALTITUDE_BOUNDARIES_KM[layer];
-      const high = DISPLAY_ALTITUDE_BOUNDARIES_KM[layer + 1];
-      return low + (high - low) * fraction;
-    }
-    start = end;
-  }
-  return DISPLAY_ALTITUDE_BOUNDARIES_KM.at(-1);
+function distanceRulerLayout() {
+  const height = getSkyHeight();
+  const engine = state.phase === "waitingLaunch" ? state.speedMultiplier : (state.runSpeed ?? state.speedMultiplier);
+  return {
+    top: height * .17, height: height * .62,
+    anchor: (flightAnchorY() - .17) * height,
+    pitch: 64,
+    // Freeze the ruler scale for this engine throughout the flight. Never jump
+    // from 5 to 1,000 to 50,000 at an atmospheric boundary. All labels are ×5.
+    step: Math.max(100, Math.round(engine / 10) * 100),
+  };
 }
 
-function getDistanceMarker(index) {
-  // Existing markers run from 19% to 80% down the viewport, lowest first.
-  const viewportY = 0.8 - index * 0.305;
-  return getDisplayAltitudeKm(getWorldScrollRatio() + 1 - viewportY);
+function distanceRulerTicks(distance = state.distanceKm) {
+  const { height, anchor, pitch, step } = distanceRulerLayout();
+  const first = Math.max(0, Math.floor((distance - (height - anchor + pitch) / pitch * step) / step));
+  const last = Math.min(Math.floor(TOTAL_DISTANCE_KM / step), Math.ceil((distance + (anchor + pitch) / pitch * step) / step));
+  const ticks = [];
+  for (let i = first; i <= last; i++) {
+    const km = i * step;
+    ticks.push({ distance: km, y: anchor + (distance - km) / step * pitch });
+  }
+  return ticks;
+}
+
+function renderDistanceRuler() {
+  const ruler = root.querySelector(".distance-markers");
+  if (!ruler) return;
+  const existing = new Map(Array.from(ruler.children, node => [Number(node.dataset.distance), node]));
+  for (const tick of distanceRulerTicks()) {
+    let marker = existing.get(tick.distance);
+    if (marker) existing.delete(tick.distance);
+    else {
+      marker = document.createElement("span");
+      marker.dataset.distance = String(tick.distance);
+      marker.textContent = formatNumber(tick.distance);
+      marker.style.transform = `translateY(${tick.y}px)`;
+      ruler.appendChild(marker);
+    }
+    marker.style.transform = `translateY(${tick.y}px)`;
+  }
+  for (const marker of existing.values()) marker.remove();
 }
 
 function flameLevel(db) {
@@ -707,12 +740,16 @@ function startGame() {
   // Gameplay starts in this turn. The adapter buffers ticks while the server
   // registers this flight; there are no profile/retry round trips on this path.
   const registration = leaderboard?.view.online
-    ? leaderboard.begin({ loadout: { speed: state.speedMultiplier, fuel: state.fuelCapacity, money: state.moneyMultiplier } })
+    ? leaderboard.begin({ rulesVersion: 2, loadout: { speed: state.speedMultiplier, fuel: state.fuelCapacity, money: state.moneyMultiplier } })
     : null;
   microphoneMeter.calibration = null;
   speech.shouldListen = false;
   stopSpeechRecognition();
   state.tryCount += 1;
+  state.activeTry = state.tryCount;
+  state.runFuelCapacity = state.fuelCapacity;
+  state.runSpeed = state.speedMultiplier;
+  state.runMoney = state.moneyMultiplier;
   saveFlightHistory();
   state.phase = "flying";
   state.flightStartedAt = Date.now();
@@ -720,6 +757,8 @@ function startGame() {
   state.maxDb = 0;
   state.progress = 0;
   state.moonSceneStartScroll = 0;
+  state.sceneScroll = 0;
+  state.sceneScrollVelocity = 0;
   state.distanceKm = 0;
   state.fuelRemaining = state.fuelCapacity;
   state.lastEarnedCoins = 0;
@@ -756,7 +795,7 @@ function beginHoldChallenge() {
   state.holdMs = 0;
   state.holdOutMs = 0;
   state.holdStartedAt = Date.now();
-  state.moonSceneStartScroll = getWorldScrollRatio();
+  state.moonSceneStartScroll = state.sceneScroll;
   state.ufoExitStartedAt = Date.now();
   state.manualModeUntil = 0;
   state.status = "";
@@ -798,7 +837,9 @@ function settleRun(landed = false) {
   state.lastEarnedCoins = Math.max(0, Math.floor((state.distanceKm / 100) * state.moneyMultiplier + 1e-9));
   if (!leaderboard?.view.online) state.coins += state.lastEarnedCoins;
   state.hasSettledRun = true;
-  state.flightHistory.push({try: state.tryCount, distance: state.distanceKm});
+  state.lastFuelUsed = Math.max(0, (state.runFuelCapacity ?? state.fuelCapacity) - state.fuelRemaining);
+  state.flightHistory.push({try: state.activeTry ?? state.tryCount, distance: state.distanceKm});
+  state.lastFlightTry = state.tryCount;
   saveFlightHistory();
   renderFlightMarkers();
   saveEconomy();
@@ -823,6 +864,8 @@ function reset() {
   state.maxDb = 0;
   state.progress = 0;
   state.moonSceneStartScroll = 0;
+  state.sceneScroll = 0;
+  state.sceneScrollVelocity = 0;
   state.distanceKm = 0;
   state.fuelRemaining = state.fuelCapacity;
   state.lastEarnedCoins = 0;
@@ -882,7 +925,12 @@ function handleButtonAction(target) {
   if (microphoneMeter.context?.state === "suspended") microphoneMeter.context.resume().catch(() => {});
   if (target.dataset.action === "open-upgrades") {
     state.upgradeFeedback = "";
-    if (!isRunningPhase() && !["preparing", "landing"].includes(state.phase)) root.querySelector(".upgrade-panel")?.showModal();
+    if (!isRunningPhase() && !["preparing", "landing"].includes(state.phase)) {
+      const dialog = root.querySelector(".upgrade-panel");
+      const board = root.querySelector(".phone")?.getBoundingClientRect();
+      if (dialog && board) Object.assign(dialog.style, { position: "fixed", margin: "0", right: "auto", left: `${board.left + board.width * .052}px`, top: "auto", bottom: `${Math.max(12, window.innerHeight - board.bottom + board.height * .02)}px`, width: `${board.width * .896}px`, maxHeight: `${board.height * .86}px` });
+      dialog?.showModal();
+    }
     return true;
   }
   if (target.dataset.action === "close-upgrades") {
@@ -911,6 +959,7 @@ function handleButtonAction(target) {
   }
   if (target.dataset.action === "enable-voice") {
     startVoiceInput({ fromUserGesture: true, force: true });
+    if (!window.SHOUT_MOON_NATIVE_AUDIO) void startMeter();
     return true;
   }
   if (target.dataset.action === "debug-clap") {
@@ -953,23 +1002,33 @@ function getSkyHeight() {
 }
 
 function getWorldScrollRatio(progress = state.progress) {
+  // Give early flights visible travel without compressing the whole atmosphere
+  // into the first physics tick. This target affects artwork only, not distance.
   const distance = clamp(progress, 0, 1) * TOTAL_DISTANCE_KM;
-  let start = 0;
-  for (let layer = 0; layer < ATMOSPHERE_BACKGROUNDS.length - 1; layer += 1) {
-    const length = DISTANCE_SEGMENTS[layer + 1].distance + (layer === 0 ? DISTANCE_SEGMENTS[0].distance : 0);
-    if (distance < start + length) return layer * 2 + 2 * (distance - start) / length;
-    start += length;
-  }
-  return ATMOSPHERE_STRIPS.length - 1;
+  return (ATMOSPHERE_STRIPS.length - 1) * Math.log1p(distance / 1000) / Math.log1p(TOTAL_DISTANCE_KM / 1000);
 }
 
 function getSceneWorldScrollRatio() {
-  const flightScroll = getWorldScrollRatio();
-  if (state.phase !== "holdPrompt" && state.phase !== "clapPrompt") return flightScroll;
-  // Finish the visual transition into space while gameplay distance is paused.
+  if (state.phase !== "holdPrompt" && state.phase !== "clapPrompt") return state.sceneScroll;
   const fraction = clamp((Date.now() - state.holdStartedAt) / MOON_REVEAL_DELAY_MS, 0, 1);
   const spaceScroll = ATMOSPHERE_STRIPS.length - 1;
-  return Math.max(flightScroll, state.moonSceneStartScroll + (spaceScroll - state.moonSceneStartScroll) * fraction);
+  return state.moonSceneStartScroll + (spaceScroll - state.moonSceneStartScroll) * fraction;
+}
+
+function advanceWorldScroll(delta) {
+  if (state.phase === "holdPrompt" || state.phase === "clapPrompt") {
+    state.sceneScroll = getSceneWorldScrollRatio();
+    return;
+  }
+  if (state.phase !== "flying") return;
+  // Smooth the visual velocity and cap delayed frames, so a powerful engine or
+  // a resumed browser cannot teleport several background panels in one frame.
+  const seconds = clamp(delta, 0, 100) / 1000;
+  const engine = state.runSpeed ?? state.speedMultiplier;
+  const maxRate = Math.min(1.6, 0.3 + state.db / 110 * 1.2 + Math.log2(Math.max(1, engine / 10)) * 0.08);
+  const desiredVelocity = state.db > 0 ? maxRate : 0;
+  state.sceneScrollVelocity += (desiredVelocity - state.sceneScrollVelocity) * (1 - Math.exp(-seconds / 0.16));
+  state.sceneScroll = Math.min(getWorldScrollRatio(), state.sceneScroll + state.sceneScrollVelocity * seconds);
 }
 
 function getWorldAnchoredViewportY(startProgress, startViewportY) {
@@ -1019,14 +1078,11 @@ function render() {
             <button class="hud-upgrade" type="button" data-action="open-upgrades">${hudIcon("upgrade")}${state.language === "ko" ? "업그레이드" : "Upgrade"}</button></div>
             <span class="coin-pill">${hudIcon("coin")}<strong></strong><small></small></span>
           </div>
-          <div class="distance-markers" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <div class="flight-markers" aria-label="Previous flight heights"></div>
+          <div class="distance-markers" aria-hidden="true"></div>
+          <div class="flight-markers" aria-label="Previous flight heights"></div><div class="community-markers" aria-label="Weekly player best heights"></div>
           <div class="mini-map">
             <div class="history-map"></div><img class="mini-pad" src="${asset("Launchpad_Small.png")}" alt="" />
+          <button type="button" class="moon-rankings" data-leaderboard="open" aria-label="Moon arrivals leaderboard" hidden>${hudIcon("trophy")}</button>
             <img class="mini-moon" src="${asset("MiniMoon_64.png")}" alt="" />
             <img class="mini-rocket" src="${asset("MiniRocket_64.png")}" alt="" />
           </div>
@@ -1041,13 +1097,14 @@ function render() {
             ${UFO_ENABLED ? `<div class="ufo" aria-hidden="true"><img src="${asset("ufo_128.png")}" alt="" /></div>` : ""}
           </div>
           <div class="speed-trails" aria-hidden="true">${[7, 19, 31, 71, 83, 94].map((x, i) => `<i style="left:${x}%;animation-delay:${-i * 0.17}s"></i>`).join("")}</div>
-          <div class="rocket">
+          <div class="rocket"><div class="rocket-thruster">
             <img class="rocket-art" src="${asset("Rocket_256.png")}" alt="" />
             <div class="flame" aria-hidden="true">
               ${[1, 2, 3, 4, 5].map((level) => ["left", "right"].map(side => `
                 <img class="flame-image flame-${side} flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
               `).join("")).join("")}
             </div>
+          </div>
           </div>
           <div class="landing-scene" aria-hidden="true">
             <img class="landing-moon" src="${asset("Moon_Rabbit.png")}" alt="" />
@@ -1059,11 +1116,11 @@ function render() {
           <div class="gauges">${flightGauge("speed", "bolt")}${flightGauge("fuel", "drop")}</div>
         </section>
         <section class="flight-result" hidden aria-labelledby="result-heading">
-          <h2 id="result-heading">${text.failed}</h2>
+          <div class="result-heading"><h2 id="result-heading">${text.failed}</h2><span class="result-wallet"></span></div>
           <div class="result-metrics">
             <div><strong class="result-distance"></strong><small class="result-speed-bonus"></small><span>${text.distance}</span></div>
+            <div><strong class="result-fuel-used"></strong><small class="result-fuel-capacity"></small><span>Fuel used</span></div>
             <div class="result-coins-column"><strong class="result-coins"></strong><small class="result-money-bonus"></small><span>${text.coins}</span></div>
-            <div><strong class="result-to-best"></strong><small class="result-best-spacer" aria-hidden="true">&nbsp;</small><span>${state.language === "ko" ? "최고 기록까지" : "to best"}</span></div>
           </div>
           <div class="flight-result-actions">
             <button type="button" data-action="debug-replay">${hudIcon("replay")}${state.language === "ko" ? "다시 하기" : "Replay"}</button>
@@ -1071,12 +1128,11 @@ function render() {
           </div>
         </section>
         <dialog class="upgrade-panel" aria-labelledby="upgrade-heading">
-          <div class="upgrade-heading"><h2 id="upgrade-heading">${state.language === "ko" ? "업그레이드" : "Upgrade"}</h2><button type="button" data-action="close-upgrades" aria-label="Close">✕</button></div>
-          <p class="upgrade-wallet"></p>
+          <div class="upgrade-heading"><button type="button" data-action="close-upgrades" aria-label="Close">‹</button><h2 id="upgrade-heading">${state.language === "ko" ? "업그레이드" : "Upgrade"}</h2><span class="upgrade-wallet"></span></div>
           <div class="stats-row">
-            <button type="button" data-upgrade="speed"><span>Speed</span><strong></strong><small></small></button>
-            <button type="button" data-upgrade="fuel"><span>Fuel</span><strong></strong><small></small></button>
-            <button type="button" data-upgrade="money"><span>Money</span><strong></strong><small></small></button>
+            <button type="button" data-upgrade="speed"><i class="upgrade-icon">${hudIcon("bolt")}</i><span>Speed</span><strong></strong><small></small></button>
+            <button type="button" data-upgrade="fuel"><i class="upgrade-icon">${hudIcon("drop")}</i><span>Fuel</span><strong></strong><small></small></button>
+            <button type="button" data-upgrade="money"><i class="upgrade-icon">${hudIcon("coin")}</i><span>Money</span><strong></strong><small></small></button>
           </div>
           <p class="upgrade-feedback" role="status"></p>
           <button class="upgrade-done" type="button" data-action="close-upgrades">${state.language === "ko" ? "완료" : "Done"}</button>
@@ -1084,7 +1140,7 @@ function render() {
         <dialog id="moon-leaderboard" class="leaderboard-panel" aria-labelledby="leaderboard-title">
           <div class="leaderboard-heading">
             <button type="button" data-leaderboard="close" aria-label="${state.language === "ko" ? "리더보드 닫기" : "Close leaderboard"}" autofocus>✕</button>
-            <div class="leaderboard-title-group"><span class="leaderboard-stars" aria-hidden="true">✧ 🏆 ✧</span><h2 id="leaderboard-title">${state.language === "ko" ? "달 착륙 랭킹" : "Moon rankings"}</h2><p class="leaderboard-subtitle"></p></div>
+            <div class="leaderboard-title-group"><span class="leaderboard-stars" aria-hidden="true">✧ 🏆 ✧</span><h2 id="leaderboard-title">${state.language === "ko" ? "달 탐험 랭킹" : "Moon rankings"}</h2><p class="leaderboard-subtitle"></p></div>
             <button type="button" data-leaderboard="profile" aria-label="${state.language === "ko" ? "닉네임 및 내 프로필" : "Edit nickname and profile"}" aria-expanded="${leaderboardProfileOpen}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="7" r="3"/><path d="M3 19v-2a6 6 0 0 1 9-5M14 19l1-4 5-5 3 3-5 5-4 1Z"/></svg></button>
           </div>
           <div class="leaderboard-content"></div>
@@ -1169,7 +1225,8 @@ function updateUi() {
   const leaderboardButton = root.querySelector(".leaderboard-launcher");
   if (leaderboardButton) leaderboardButton.disabled = isRunningPhase() || ["landing", "preparing"].includes(state.phase);
   const upgradeButton = root.querySelector(".hud-upgrade");
-  if (upgradeButton) upgradeButton.disabled = !["waitingLaunch", "failed", "landed", "replayPrompt"].includes(state.phase);
+  if (upgradeButton) { upgradeButton.hidden = !["waitingLaunch", "failed", "landed", "replayPrompt"].includes(state.phase); upgradeButton.disabled = upgradeButton.hidden; }
+  root.querySelector(".phone")?.classList.toggle("game-over", state.phase === "failed");
   const displayedDb = state.phase === "waitingLaunch" ? 0 : Math.round(state.db);
   const range = getRange(state.db);
   const flightDistance = clamp(state.progress, 0, 1);
@@ -1184,6 +1241,7 @@ function updateUi() {
 
   const coinPill = root.querySelector(".coin-pill");
   if (coinPill) {
+    coinPill.hidden = state.phase !== "waitingLaunch";
     coinPill.querySelector("strong").textContent = formatNumber(state.coins);
     coinPill.querySelector("small").textContent = `×${formatStat(state.moneyMultiplier)}`;
   }
@@ -1192,7 +1250,7 @@ function updateUi() {
     dashboard.hidden = state.phase === "failed";
     dashboard.classList.toggle("low-fuel", fuelRatio <= 0.25);
     dashboard.querySelector(".gauge-speed strong").textContent = formatNumber(currentSpeedKms());
-    dashboard.querySelector(".gauge-fuel strong").textContent = `${formatStat(state.fuelRemaining)} t`;
+    dashboard.querySelector(".gauge-fuel strong").innerHTML = `${formatStat(state.fuelRemaining)} <small>/ ${formatStat(state.fuelCapacity)} t</small>`;
     dashboard.querySelector(".gauge-speed .gauge-value").style.strokeDasharray = `${clamp(state.db / 110, 0, 1) * 100} 100`;
     dashboard.querySelector(".gauge-fuel .gauge-value").style.strokeDasharray = `${fuelRatio * 100} 100`;
     dashboard.querySelector(".gauge-speed .gauge-caption").innerHTML = `${hudIcon("sound")}${displayedDb} dB <em>×${formatStat(state.speedMultiplier)}</em>`;
@@ -1203,12 +1261,14 @@ function updateUi() {
     result.hidden = state.phase !== "failed";
     result.querySelector(".result-distance").textContent = formatNumber(Math.floor(state.distanceKm));
     result.querySelector(".result-coins").textContent = `+${formatNumber(state.lastEarnedCoins)}`;
-    result.querySelector(".result-speed-bonus").textContent = `×${formatStat(state.speedMultiplier)}`;
-    result.querySelector(".result-money-bonus").textContent = `×${formatStat(state.moneyMultiplier)}`;
-    result.querySelector(".result-to-best").textContent = `-${formatNumber(Math.max(0, Math.floor((bestFlight()?.distance || 0) - state.distanceKm)))}`;
+    result.querySelector(".result-speed-bonus").textContent = `×${formatStat(state.runSpeed ?? state.speedMultiplier)}`;
+    result.querySelector(".result-money-bonus").textContent = `×${formatStat(state.runMoney ?? state.moneyMultiplier)}`;
+    result.querySelector(".result-fuel-used").textContent = `${formatStat(state.lastFuelUsed ?? 0)} t`;
+    result.querySelector(".result-fuel-capacity").textContent = `${formatStat(state.runFuelCapacity ?? state.fuelCapacity)} t`;
+    result.querySelector(".result-wallet").innerHTML = `${hudIcon("coin")}${formatNumber(state.coins)}`;
   }
   const wallet = root.querySelector(".upgrade-wallet");
-  if (wallet) wallet.textContent = `${text.coins}: ${formatNumber(state.coins)}`;
+  if (wallet) wallet.textContent = `${formatNumber(state.coins)}`;
   const feedback = root.querySelector(".upgrade-feedback");
   if (feedback) feedback.textContent = leaderboard?.view.busy
     ? (state.language === "ko" ? "처리 중…" : "Processing…")
@@ -1216,11 +1276,7 @@ function updateUi() {
       ? (leaderboard.view.error || (state.language === "ko" ? "비행 보상을 저장 중입니다…" : "Saving flight rewards…"))
       : (state.upgradeFeedback || (state.language === "ko" ? "업그레이드할 항목을 선택하세요." : "Choose an upgrade."));
 
-  root.querySelectorAll(".distance-markers span").forEach((marker, index) => {
-    // The top of the viewport is farther along the ascent, so markers descend
-    // from the largest distance to the smallest near the launch pad.
-    marker.textContent = formatNumber(getDistanceMarker(2 - index));
-  });
+  renderDistanceRuler();
 
   const world = root.querySelector(".world");
   if (world) world.style.setProperty("--scroll", `${getSceneWorldScrollRatio() * getSkyHeight()}px`);
@@ -1245,6 +1301,7 @@ function updateUi() {
 
   const rocket = root.querySelector(".rocket");
   if (rocket) {
+    rocket.classList.toggle("vibrating", isRunningPhase());
     rocket.classList.toggle("launching", state.phase !== "waitingLaunch");
     rocket.classList.toggle("hidden", state.phase === "landing" || state.phase === "landed" || state.phase === "replayPrompt");
   }
@@ -1255,12 +1312,12 @@ function updateUi() {
     const level = flameLevel(state.db);
     flame.dataset.level = String(level);
     flame.dataset.step = String(step);
-    flame.style.width = `${40 + step * 4}px`;
-    flame.style.height = `${60 + step * 7}px`;
+    flame.style.width = `${38 + step * .35}px`;
+    flame.style.height = `${38 + step * 4}px`;
     flame.style.visibility = state.db > 0 ? "visible" : "hidden";
     flame.style.filter = `brightness(${0.85 + step * 0.025}) saturate(${1 + step * 0.025}) drop-shadow(0 0 ${step * 0.55}px rgba(255,174,0,${0.15 + step * 0.025}))`;
     flame.style.animationDuration = `${Math.max(65, 280 - step * 9)}ms`;
-    flame.style.setProperty("--flame-spread", `${2 + step * 0.6}%`);
+    flame.style.setProperty("--flame-spread", `${1 + step * .12}%`);
     flame.style.setProperty("--flame-pulse", String(1.02 + step * 0.004));
     root.querySelectorAll(".flame-image").forEach((image) => {
       image.classList.toggle("active", image.classList.contains(`flame-level-${level}`));
@@ -1272,12 +1329,16 @@ function updateUi() {
     const y = flightMarkerY(Number(marker.dataset.distance));
     marker.style.top = `${y * 100}%`;
     const overlapsBest = bestMarkerY !== null && Math.abs(y - bestMarkerY) * getSkyHeight() < 32;
-    marker.hidden = y < 0.08 || y > 0.94 || overlapsBest;
+    const latest = marker.classList.contains("latest");
+    const forceLatest = latest && state.phase === "failed";
+    marker.style.top = `${(forceLatest ? clamp(y, .14, .74) : y) * 100}%`;
+    marker.hidden = !forceLatest && (y < 0.12 || y > 0.80 || (!latest && overlapsBest));
     if (bestMarkerY === null) bestMarkerY = y;
   });
+  renderCommunityMarkers();
   const miniRocket = root.querySelector(".mini-rocket");
   if (miniRocket) {
-    miniRocket.style.bottom = `calc(${flightDistance * 100}% - ${flightDistance * 24}px)`;
+    miniRocket.style.bottom = minimapPosition(flightDistance).rocketBottom;
   }
 
   const bigMoon = root.querySelector(".big-moon");
@@ -1286,6 +1347,8 @@ function updateUi() {
     bigMoon.classList.toggle("visible", moon.visible);
     bigMoon.style.top = `${moon.y * 100}%`;
     bigMoon.style.opacity = moon.visible ? moon.opacity : 0;
+    const moonLink = root.querySelector('.moon-rankings');
+    if (moonLink) { moonLink.hidden = !(leaderboard?.view.snapshot?.moonFinishers > 0); }
   }
 
   const ufoEl = root.querySelector(".ufo");
@@ -1306,13 +1369,14 @@ function updateUi() {
   const centerMessage = root.querySelector(".center-message");
   if (centerMessage) {
     centerMessage.className = `center-message phase-${state.phase}`;
-    centerMessage.innerHTML = getCenterMessage(text);
+    const message = getCenterMessage(text);
+    if (centerMessage.innerHTML !== message) centerMessage.innerHTML = message;
   }
 
   root.querySelectorAll(".stats-row button").forEach((button) => {
     button.disabled = isRunningPhase() || state.phase === "landing" || state.phase === "preparing" || !!leaderboard?.view.busy || !!leaderboard?.pendingCount() || state.coins < upgradeCost(button.dataset.upgrade);
     const price = button.querySelector("small");
-    if (price) price.textContent = `${upgradeCost(button.dataset.upgrade)} ${text.coins}`;
+    if (price) price.textContent = `${upgradeCost(button.dataset.upgrade)}`;
   });
 
   const stats = root.querySelectorAll(".stats-row button strong");
@@ -1333,7 +1397,12 @@ function updateUi() {
 }
 
 function getCenterMessage(text) {
-  if (state.phase === "waitingLaunch") return text.waitingLaunch;
+  if (state.phase === "waitingLaunch") {
+    if (window.SHOUT_MOON_NATIVE_AUDIO) return text.waitingLaunch;
+    const button = speech.isListening ? "" : `<button class="voice-start" type="button" data-action="enable-voice">${state.language === "ko" ? "마이크 켜기" : "Enable voice"}</button>`;
+    const feedback = state.speechStatus ? `<small class="voice-feedback" role="status">${escapeHtml(state.speechStatus)}</small>` : "";
+    return `${button}<span>${text.waitingLaunch}</span>${feedback}`;
+  }
   if (state.phase === "flying") {
     if (state.progress >= MOON_TRIGGER_PROGRESS * 0.92 && hasUfoClearedRocketForChallenge()) {
       return `<strong>${text.getReadyHold}</strong><span>${text.holdHint}</span>`;
@@ -1453,6 +1522,7 @@ function updateGame(delta) {
     state.distanceKm = Math.min(TOTAL_DISTANCE_KM * MOON_TRIGGER_PROGRESS, state.distanceKm + currentSpeedKms() * (flightDelta / 1000));
     syncProgressFromDistance();
   }
+  advanceWorldScroll(flightDelta);
   if (isRunningPhase()) {
     state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * BALANCE.fuelBurnPerSecond);
     if (state.fuelRemaining <= 1e-9) {
@@ -1545,7 +1615,7 @@ root.addEventListener("change", (event) => {
 
 root.addEventListener("click", event => {
   const action = event.target.closest("[data-leaderboard]")?.dataset.leaderboard;
-  if (action === "open" && !isRunningPhase() && !["landing", "preparing"].includes(state.phase)) {
+  if (action === "open") {
     setLeaderboardOpen(true); void leaderboard?.refresh();
   }
   if (action === "close") setLeaderboardOpen(false);
@@ -1557,6 +1627,7 @@ root.addEventListener("click", event => {
   }
   if (action === "refresh") void leaderboard?.refresh();
   if (action === "retry") void leaderboard?.retry();
+void leaderboard?.refresh();
 
 });
 root.addEventListener("submit", event => {
@@ -1761,8 +1832,12 @@ function startVoiceInput(options = {}) {
 }
 
 async function startMeter() {
+  if (microphoneMeter.context) { await microphoneMeter.context.resume().catch(() => {}); return; }
+  if (microphoneMeter.starting) return;
+  microphoneMeter.starting = true;
   if (!navigator.mediaDevices?.getUserMedia) {
     state.status = "Browser microphone API is not available.";
+    microphoneMeter.starting = false;
     render();
     return;
   }
@@ -1774,6 +1849,7 @@ async function startMeter() {
     }
     const audioContext = new AudioContextClass();
     microphoneMeter.context = audioContext;
+    await audioContext.resume().catch(() => {});
     const track = stream.getAudioTracks()[0];
     const settings = track.getSettings();
     selectMeterDevice(JSON.stringify({ device: settings.deviceId || track.label, sampleRate: settings.sampleRate || audioContext.sampleRate,
@@ -1801,7 +1877,9 @@ async function startMeter() {
     }
 
     tick();
+    microphoneMeter.starting = false;
   } catch (error) {
+    microphoneMeter.starting = false;
     state.status = error instanceof Error ? error.message : "Microphone dB measurement failed.";
     render();
   }
@@ -1828,11 +1906,15 @@ window.addEventListener("native-audio-status", (event) => {
 loadEconomy();
 render();
 void leaderboard?.retry();
-if (leaderboard?.view.online) void leaderboard.connect();
+if (leaderboard?.view.online) void leaderboard.connect().then(() => leaderboard.refresh());
 else if (leaderboard && state.tryCount === 0 && state.coins === 0 && state.speedMultiplier === 10 && state.fuelCapacity === 10 && state.moneyMultiplier === 1) {
-  void leaderboard.connect('new');
+  void leaderboard.connect('new').then(() => leaderboard.refresh());
 }
 if (!window.SHOUT_MOON_NATIVE_AUDIO) {
-  startVoiceInput();
-  startMeter();
+  // Avoid a denied auto-start leaving the very first Launch permanently deaf.
+  navigator.permissions?.query({name: 'microphone'}).then(permission => {
+    if (permission.state === 'granted') { startVoiceInput(); void startMeter(); }
+  }).catch(() => {});
 }
+
+window.setInterval(() => { if (leaderboard?.view.online && !document.hidden) void leaderboard.refresh(); }, 60000);
