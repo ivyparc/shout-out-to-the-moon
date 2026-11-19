@@ -1,5 +1,5 @@
 // Private, owner-authorized snapshots. Never expose snapshot bodies to game visitors.
-export const BACKUP_TABLES = ['moon_players', 'moon_runs', 'moon_scores', 'moon_time_scores', 'moon_flight_scores', 'moon_periods', 'moon_migrations', 'moon_limits'];
+export const BACKUP_TABLES = ['moon_players', 'moon_runs', 'moon_scores', 'moon_time_scores', 'moon_flight_scores', 'mars_flight_scores', 'moon_periods', 'moon_migrations', 'moon_limits'];
 const PREFIX = 'leaderboard-backups/v1/';
 const LATEST_KEY = `${PREFIX}latest.json`;
 const ROW_LIMIT = 50001;
@@ -14,7 +14,7 @@ export async function verifyBackup(bucket, key) {
   const sha256 = await digest(body);
   if (sha256 !== object.customMetadata?.sha256) throw new Error('Backup checksum mismatch.');
   const data = JSON.parse(body);
-  for (const table of BACKUP_TABLES) {
+  for (const table of BACKUP_TABLES.filter(name => data.version >= 2 || name !== 'mars_flight_scores')) {
     if (!Array.isArray(data.tables?.[table]) || data.tables[table].length !== data.counts?.[table]) throw new Error('Invalid backup table.');
   }
   return { verified: true, key, createdAt: data.createdAt, counts: data.counts, sha256, bytes: new TextEncoder().encode(body).byteLength };
@@ -26,14 +26,14 @@ export async function createBackup(db, bucket, now = new Date()) {
   const previous = await bucket.head(key);
   // One D1 batch is a transaction: all tables belong to the same snapshot.
   const results = await db.batch([
-    db.prepare("SELECT name, type, sql FROM sqlite_master WHERE name LIKE 'moon_%' AND sql IS NOT NULL ORDER BY type DESC, name"),
+    db.prepare("SELECT name, type, sql FROM sqlite_master WHERE (name LIKE 'moon_%' OR name LIKE 'mars_%') AND sql IS NOT NULL ORDER BY type DESC, name"),
     ...BACKUP_TABLES.map(table => db.prepare(`SELECT * FROM ${table} LIMIT ${ROW_LIMIT}`)),
   ]);
   if (results.some(r => r.success === false)) throw new Error('Database snapshot failed.');
   const tables = Object.fromEntries(BACKUP_TABLES.map((table, i) => [table, results[i + 1].results]));
   if (Object.values(tables).some(rows => !Array.isArray(rows) || rows.length >= ROW_LIMIT)) throw new Error('Backup exceeds snapshot limit; no partial backup was saved.');
   const counts = Object.fromEntries(Object.entries(tables).map(([name, rows]) => [name, rows.length]));
-  const body = JSON.stringify({ format: 'moon-leaderboard-backup', version: 1, createdAt: now.toISOString(), schema: results[0].results, counts, tables });
+  const body = JSON.stringify({ format: 'moon-leaderboard-backup', version: 2, createdAt: now.toISOString(), schema: results[0].results, counts, tables });
   if (new TextEncoder().encode(body).byteLength > MAX_BYTES) throw new Error('Backup exceeds size limit; no partial backup was saved.');
   const sha256 = await digest(body);
   // Atomic conditional replacement: a failed export/upload preserves the old backup.

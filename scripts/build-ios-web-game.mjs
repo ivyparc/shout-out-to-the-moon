@@ -27,6 +27,7 @@ const requiredAssets = new Set([
   "Moon.png",
   "Moon_Rabbit.png",
   "Rocket_256.png",
+  "MiniRocket.png",
   "clouds.png",
   "Launchpad_Big.png",
   "Launchpad_Small.png",
@@ -399,7 +400,7 @@ const [html, css, js, assetFiles, leaderboardConfig, leaderboardJs] = await Prom
 
 const assetEntries = await Promise.all(
   assetFiles
-    .filter((file) => requiredAssets.has(file) && mimeTypes.has(extname(file).toLowerCase()))
+    .filter((file) => (requiredAssets.has(file) || file.startsWith("mars-")) && mimeTypes.has(extname(file).toLowerCase()))
     .map(async (file) => {
       const extension = extname(file).toLowerCase();
       const data = await readFile(join(assetsDir, file));
@@ -427,7 +428,7 @@ window.addEventListener("unhandledrejection", function (event) {
 const document = html
   .replace('<script src="/src/web/leaderboard-config.js"></script>', `<script>${leaderboardConfig}\n${process.env.LEADERBOARD_ENDPOINT ? `window.SHOUT_MOON_LEADERBOARD.endpoint = ${JSON.stringify(process.env.LEADERBOARD_ENDPOINT).replace(/</g, "\\u003c")};` : ""}</script>`)
   .replace('<script src="/src/web/leaderboard.js"></script>', `<script>${leaderboardJs}</script>`)
-  .replace(/<link\s+rel="stylesheet"\s+href="[^"]*src\/web\/styles\.css"[^>]*\/?\s*>/, `<style>${css}</style>`)
+  .replace(/<link\s+rel="stylesheet"\s+href="[^"]*src\/web\/styles\.css[^"]*"[^>]*\/?\s*>/, `<style>${css}</style>`)
   .replace(/<script\s+type="module"\s+src="[^"]*src\/web\/main\.js[^"]*"><\/script>/, `<script>${assetScript}\n${js}</script>`);
 
 await writeFile(output, buildSwift(document));

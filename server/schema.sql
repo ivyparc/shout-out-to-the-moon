@@ -35,7 +35,8 @@ CREATE TABLE `moon_players` (
 	`coins` integer DEFAULT 0 NOT NULL,
 	`tries` integer DEFAULT 0 NOT NULL,
 	`migrated` integer DEFAULT 0 NOT NULL,
-	`active_run` text
+	`active_run` text,
+	`sheet_state` text
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `moon_token_hash` ON `moon_players` (`token_hash`);--> statement-breakpoint
@@ -94,3 +95,19 @@ CREATE TABLE `moon_flight_scores` (
 --> statement-breakpoint
 CREATE INDEX `moon_flight_week_score` ON `moon_flight_scores` (`period`,`score`,`achieved_at`);--> statement-breakpoint
 CREATE INDEX `moon_flight_player` ON `moon_flight_scores` (`player`,`period`);
+--> statement-breakpoint
+CREATE TABLE `mars_flight_scores` (
+	`run_id` text PRIMARY KEY NOT NULL,
+	`player` text NOT NULL,
+	`period` text NOT NULL,
+	`score` real NOT NULL,
+	`distance` real NOT NULL,
+	`elapsed_ms` integer NOT NULL,
+	`landed` integer NOT NULL,
+	`achieved_at` integer NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `moon_runs`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`player`) REFERENCES `moon_players`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE INDEX `mars_flight_week_score` ON `mars_flight_scores` (`period`,`score`,`achieved_at`);--> statement-breakpoint
+CREATE INDEX `mars_flight_player` ON `mars_flight_scores` (`player`,`period`);

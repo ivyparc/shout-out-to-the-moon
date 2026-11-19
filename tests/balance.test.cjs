@@ -148,6 +148,7 @@ test('rewards use distance divided by 100 times Money without bonuses', () => {
 
 test('joined backgrounds span the full journey continuously, two strips per layer', () => {
   const { run } = game();
+  run('state.runSpeed=300; state.runFuelCapacity=40;');
   assert.equal(run('getWorldScrollRatio(0)'), 0);
   assert.equal(run('getWorldScrollRatio(1)'), 10);
   let previous = 0;

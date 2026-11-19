@@ -6,8 +6,11 @@
     const storage = options.storage || host.localStorage;
     const fetchRequest = options.fetch || host.fetch.bind(host);
     const wait = options.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
-    const prefix = `${config.namespace}.${config.scope}.moon.v2.${config.endpoint}`;
-    const identityKey = `${config.namespace}.identity.v2.${config.endpoint}`;
+    // The name, online preference and recoverable run queue belong to the player.
+    // Each run's verified launch determines its destination on the server.
+    const storageEndpoint = config.storageEndpoint || config.endpoint;
+    const prefix = `${config.namespace}.${config.scope === "mars" ? "default" : config.scope}.moon.v2.${storageEndpoint}`;
+    const identityKey = `${config.namespace}.identity.v2.${storageEndpoint}`;
     const read = (key, fallback) => {
       const value = storage.getItem(key);
       return value ? JSON.parse(value) : fallback;
@@ -18,7 +21,7 @@
     let submitting;
     let current = null;
     let listener = () => {};
-    const view = { status: config.endpoint ? "ready" : "unconfigured", error: "", snapshot: null, period: "active", playerName: read(`${prefix}.name`, ""), online: read(`${prefix}.online`, false), profile: null, playerId: null, activeRunId: null, busy: false };
+    const view = { status: config.endpoint ? "ready" : "unconfigured", error: "", snapshot: null, playerName: read(`${prefix}.name`, ""), online: read(`${prefix}.online`, false), profile: null, playerId: null, activeRunId: null, busy: false, flightError: "" };
     const changed = () => listener(view);
     const report = error => { view.status = "error"; view.error = error.message; changed(); };
     async function request(method, fields, token) {
@@ -116,13 +119,11 @@
       if (run) run.abandoning = cancel;
       return cancel;
     }
-    async function refresh(period = view.period) {
+    async function refresh() {
       if (!config.endpoint) return;
-      view.period = period;
       view.status = "loading"; view.error = ""; changed();
       try {
-        const snapshot = await api("GET", { period, limit: 100 });
-        if (view.period !== period) return;
+        const snapshot = await api("GET", { period: "all", limit: 100 });
         view.snapshot = snapshot; view.status = "ready"; changed();
       } catch (error) { report(error); }
     }
@@ -131,7 +132,7 @@
       if (!config.endpoint) return Promise.resolve(false);
       const run = { runId: null, events: [], sequence: 0, completed: false, invalid: false, elapsed: 0, acknowledgedAt: 0, queued: false };
       current = run;
-      view.status = "starting"; view.error = ""; changed();
+      view.status = "starting"; view.error = ""; view.flightError = ""; changed();
       run.started = (async () => {
         // A fast Replay may precede settlement of the last flight. Serialize
         // server sessions, while the new flight already records its own ticks.
@@ -148,6 +149,7 @@
         return true;
       })().catch(async error => {
         run.invalid = true;
+        view.flightError = error.message;
         try { receive(await api('POST', { action: 'profile' })); } catch {}
         report(error); return false;
       });
@@ -221,6 +223,8 @@
             }
             if (result.playerName) { view.playerName = result.playerName; write(`${prefix}.name`, view.playerName); }
             view.activeRunId = null;
+            if (current?.runId === run.runId && Number.isFinite(result.earned)) current.earned = result.earned;
+            view.flightError = "";
             receive(result);
             landedAny ||= run.landed !== false && !result.legacyRecord;
             pending = pending.filter(item => item !== run);
@@ -228,7 +232,7 @@
           }
           await refresh();
           if (view.status !== "error") { view.status = landedAny ? "submitted" : "ready"; changed(); }
-        } catch (error) { report(error); }
+        } catch (error) { view.flightError = error.message; report(error); }
       })().finally(() => { submitting = null; });
       return submitting;
     }
@@ -241,7 +245,24 @@
         return true;
       } catch (error) { report(error); return false; }
     }
-    return { view, begin, record, invalidate, landed: () => finish(true), failed: () => { if (current) current.landed = false; return finish(false); }, refresh, retry, rename, connect, upgrade, abandon,
+    async function changeSheetSettings(mode) {
+      if (!view.online || view.busy) return false;
+      view.busy = true; view.error = ''; changed();
+      try {
+        if (current?.finishing) await current.finishing;
+        if (pending.length || submitting) await retry();
+        if (pending.length) throw new Error('Flight rewards are waiting to sync. Retry from rankings.');
+        receive(await api('POST', { action: 'sheet_settings', mode }));
+        view.status = 'ready';
+        return true;
+      } catch (error) { report(error); return false; }
+      finally { view.busy = false; changed(); }
+    }
+    async function loadReplay() {
+      try { return await api("GET", { action: "replay" }); }
+      catch { return null; }
+    }
+    return { view, begin, record, invalidate, loadReplay, changeSheetSettings, confirmedReward: () => current?.earned, landed: () => finish(true), failed: () => { if (current) current.landed = false; return finish(false); }, refresh, retry, rename, connect, upgrade, abandon,
       disconnect() { invalidate(); view.online = false; write(`${prefix}.online`, false); view.status = 'ready'; changed(); },
       subscribe(fn) { listener = fn; }, pendingCount() { return pending.length + (current?.completed && !current.invalid && !current.queued ? 1 : 0); } };
   }

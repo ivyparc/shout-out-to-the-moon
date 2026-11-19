@@ -1,5 +1,7 @@
 import { moonValidator } from './moon-validator.mjs';
+import { readSheetSettings } from './sheet-settings.mjs';
 
+const scoreTable = scope => scope === 'mars' ? 'mars_flight_scores' : 'moon_flight_scores';
 const APP = 'shout-out-to-the-moon';
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -7,7 +9,26 @@ const secret = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), x =>
 const dateParts = date => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date).map(p => [p.type, p.value]));
 const day = date => { const p = dateParts(date); return `${p.year}-${p.month}-${p.day}`; };
 const month = date => day(date).slice(0, 7);
-const profile = p => ({ speed: p.speed, fuel: p.fuel, money: p.money / 10, coins: p.coins, tries: p.tries, migrated: !!p.migrated });
+const torontoOffset = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', timeZoneName: 'longOffset' });
+function monthStart(period) {
+  // UTC midnight precedes Toronto midnight and uses the offset in effect
+  // at the start of the local day, including months with a DST change.
+  const utc = new Date(period + '-01T00:00:00Z');
+  const offset = torontoOffset.formatToParts(utc).find(part => part.type === 'timeZoneName').value.slice(3);
+  return Date.parse(period + '-01T00:00:00' + offset);
+}
+const sheetState = p => p.sheet_state ? JSON.parse(p.sheet_state) : null;
+const activeSheet = p => {
+  const sheet = sheetState(p);
+  return sheet?.regular ? sheet.settings : null;
+};
+const storedStats = p => ({ speed: p.speed, fuel: p.fuel, money: p.money });
+const fromStored = (type, value) => type === 'money' ? value / 10 : value;
+const toStored = (type, value) => type === 'money' ? Math.round(value * 10) : value;
+const profile = p => ({
+  speed: p.speed, fuel: p.fuel, money: p.money / 10, coins: p.coins, tries: p.tries,
+  migrated: !!p.migrated, sheetSettings: activeSheet(p),
+});
 const cost = (type, value) => Math.max(50, Math.round(50 * (value / 10) ** (type === 'speed' ? 1.3 : type === 'fuel' ? 1 : 1.5) / 5) * 5);
 const nextValue = (type, value) => type === 'speed' ? Math.min(10000, Math.ceil(value * 1.4)) : type === 'fuel' ? Math.min(600, value + 3) : Math.min(100000, value + 1);
 const week = date => { const d = new Date(day(date) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); };
@@ -15,7 +36,7 @@ const statsValid = p => p && ['speed','fuel','coins'].every(k => Number.isSafeIn
 
 // One API in the existing game Worker. D1 is its private storage binding;
 // clients have no database credentials or direct table access.
-export function createMoonService(database, { adminSecret = '', now = () => new Date() } = {}) {
+export function createMoonService(database, { adminSecret = '', now = () => new Date(), loadSettings = readSheetSettings } = {}) {
   const db = database.withSession ? database.withSession('first-primary') : database;
   const stmt = (sql, ...args) => db.prepare(sql).bind(...args);
   const one = (sql, ...args) => stmt(sql, ...args).first();
@@ -60,25 +81,110 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     }
     fail(503, 'Could not assign a name. Please retry.');
   }
-  async function snapshot(p, selected = 'active') {
+  async function snapshot(p, selected = 'active', table) {
     if (!['active','all'].includes(selected) && !/^\d{4}-\d{2}-\d{2}$/.test(selected)) fail(400, 'Invalid period.');
     const activePeriod = await rankPeriod();
     const period = selected === 'active' ? activePeriod : selected;
-    const rows = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by score desc,achieved_at asc) as pick from moon_flight_scores s join moon_players p on p.id=s.player where (?='all' or s.period=?)), ranked as (select *,row_number() over(order by score desc,achieved_at asc,player asc) as rank from best where pick=1) select * from ranked where rank<=100 or player=? order by rank`, period, period, p.id);
+    const rows = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by score desc,achieved_at asc) as pick from ${table} s join moon_players p on p.id=s.player where (?='all' or s.period=?)), ranked as (select *,row_number() over(order by score desc,achieved_at asc,player asc) as rank from best where pick=1) select * from ranked where rank<=100 or player=? order by rank`, period, period, p.id);
     const map = r => ({ rank: r.rank, name: r.name, score: r.score, distance: r.distance, elapsedMs: r.elapsed_ms, landed: !!r.landed, updatedAt: new Date(r.achieved_at).toISOString(), isToday: day(new Date(r.achieved_at)) === day(now()) });
-    const heights = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by distance desc,landed desc,achieved_at asc) as pick from moon_flight_scores s join moon_players p on p.id=s.player where period=?) select name,distance,landed,achieved_at from best where pick=1 and player<>? order by distance desc`, activePeriod, p.id);
+    const markerPeriod = month(now());
+    const since = monthStart(markerPeriod);
+    const heights = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by distance desc,landed desc,achieved_at asc) as pick from ${table} s join moon_players p on p.id=s.player where s.achieved_at>=?) select name,distance,landed,achieved_at from best where pick=1 and player<>? order by distance desc`, since, p.id);
     return { entries: rows.filter(r => r.rank <= 100).map(map), currentPlayer: rows.find(r => r.player === p.id) ? map(rows.find(r => r.player === p.id)) : null,
-      markers: heights.filter(r => !r.landed), moonFinishers: (await one('select count(distinct player) as total from moon_flight_scores where period=? and landed=1', activePeriod)).total,
-      metric: 'distance_minus_seconds', order: 'desc', activePeriod, period, periods: (await all('select distinct period from moon_flight_scores order by period desc')).map(r => r.period) };
+      markerPeriod, markers: heights.filter(r => !r.landed), moonFinishers: (await one(`select count(distinct player) as total from ${table} where achieved_at>=? and landed=1`, since)).total,
+      metric: 'distance_minus_seconds', order: 'desc', activePeriod, period, periods: (await all(`select distinct period from ${table} order by period desc`)).map(r => r.period) };
   }
-  async function start(p, input) {
+  async function replay(p, table) {
+    const row = await one(`with best as (
+      select s.*, row_number() over(partition by player order by score desc, achieved_at asc, run_id asc) as pick
+      from ${table} s
+    ), ranked as (
+      select *, row_number() over(order by score desc, achieved_at asc, player asc) as rank
+      from best where pick=1
+    ), own as (select rank from ranked where player=?), playable as (
+      select s.player, s.distance, r.state, row_number() over(
+        partition by s.player order by s.score desc, s.achieved_at asc, s.run_id asc
+      ) as pick
+      from ${table} s join moon_runs r on r.id=s.run_id
+      where s.player<>? and s.distance>0 and (
+        json_array_length(json_extract(r.state, '$.replay'))>1
+        or json_extract(r.state, '$.sequence')=1
+      )
+    )
+    select f.state, f.distance, player.name from playable f join ranked b on b.player=f.player
+    join moon_players player on player.id=f.player
+    where f.pick=1
+    order by case when abs(b.rank-(select rank from own))<=5 then 0 else 1 end,
+      random() limit 1`, p.id, p.id);
+    if (!row) return { samples: null };
+    const state = JSON.parse(row.state);
+    if (state.replay?.length > 1) return { samples: state.replay, name: row.name };
+    // A single stored batch starts at takeoff and contains the entire flight.
+    // Older multi-batch flights only retain their last batch.
+    const samples = [[0, 0]];
+    let elapsed = 0, distance = 0;
+    for (const frame of JSON.parse(state.lastBatch)) {
+      if (frame.type !== 'tick' || frame.delta === 0) continue;
+      const speed = frame.db * state.stats.speed;
+      const delta = Math.min(frame.delta, state.stats.fuel * 1000 - elapsed,
+        speed > 0 ? (row.distance - distance) / speed * 1000 : Infinity);
+      if (delta <= 0) break;
+      elapsed += delta;
+      distance = Math.min(row.distance, distance + speed * delta / 1000);
+      samples.push([elapsed, distance]);
+      if (row.distance - distance < 1e-6) break;
+    }
+    return samples.length > 1 ? { samples, name: row.name } : { samples: null };
+  }
+  async function changeSheetMode(p, mode) {
+    if (mode !== 'sheet' && mode !== 'default') fail(400, 'Unknown settings mode.');
+    if (p.active_run) fail(409, 'Finish the active flight before changing settings.');
+    const previous = sheetState(p);
+    if (mode === 'default' && !previous?.regular) return { profile: profile(p) };
+
+    let stats, next;
+    if (mode === 'sheet') {
+      await limit(`sheet:${p.id}`, 12);
+      let settings;
+      try { settings = await loadSettings(); }
+      catch { fail(502, 'Unable to read the Google Sheet.'); }
+      const saved = previous?.regular ? storedStats(p) : previous?.sheet;
+      // Keep each purchased stage when sheet values change.
+      stats = Object.fromEntries(['speed', 'fuel', 'money'].map(type => {
+        const index = saved ? previous.settings[type].values.indexOf(fromStored(type, saved[type])) : 0;
+        const value = index >= 0 ? toStored(type, settings[type].values[index]) : saved[type];
+        return [type, value];
+      }));
+      next = { settings, regular: previous?.regular ?? storedStats(p) };
+    } else {
+      stats = previous.regular;
+      next = { settings: previous.settings, sheet: storedStats(p) };
+    }
+
+    const changed = await one(`update moon_players set speed=?,fuel=?,money=?,sheet_state=?
+      where id=? and active_run is null and speed=? and fuel=? and money=? and sheet_state is ?
+      returning *`, stats.speed, stats.fuel, stats.money, JSON.stringify(next),
+      p.id, p.speed, p.fuel, p.money, p.sheet_state ?? null);
+    if (!changed) fail(409, 'Settings changed in another tab. Refresh and try again.');
+    return { profile: profile(changed) };
+  }
+
+  async function start(p, input, scope) {
     await limit(`start:${p.id}`, 120, 3600);
-    const stats = profile(p);
-    const validator = moonValidator({ resolveLoadout: async () => stats, allowFailures: true });
+    const stats = { speed: p.speed, fuel: p.fuel, money: p.money / 10 };
+    const validator = moonValidator({ resolveLoadout: async () => stats, allowFailures: true, sheetMode: !!activeSheet(p) });
     const initial = await validator.start({ input, now: now() });
+    initial.state.scope = scope;
     const id = crypto.randomUUID();
+    // A browser closed before submitting any flight data can leave the launch
+    // slot occupied. Recover it after that flight's fuel window and upload grace.
+    const staleBefore = now().getTime() - (stats.fuel + 15) * 1000;
     const result = await db.batch([
-      stmt('update moon_players set active_run=?,tries=tries+1 where id=? and active_run is null and speed=? and fuel=? and money=?', id, p.id, p.speed, p.fuel, p.money),
+      stmt(`update moon_players set active_run=?,tries=tries+1 where id=? and speed=? and fuel=? and money=? and sheet_state is ?
+        and (active_run is null or (?=1 and exists (
+          select 1 from moon_runs where id=moon_players.active_run and player=moon_players.id
+            and started_at<=? and arrival_at is null and version=0 and finished_at is null
+        )))`, id, p.id, p.speed, p.fuel, p.money, p.sheet_state ?? null, input?.recoverStale === true ? 1 : 0, staleBefore),
       stmt('insert into moon_runs(id,player,state,started_at,version,settled,consumed) select ?,id,?,?,0,0,0 from moon_players where id=? and active_run=?', id, JSON.stringify(initial.state), now().getTime(), p.id, id),
     ]);
     if (!result[0].meta.changes) fail(409, 'Finish or abandon your active flight before launching.');
@@ -110,15 +216,16 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     const run = await one('select * from moon_runs where id=? and player=?', runId, p.id);
     if (!run?.finished_at) fail(400, 'A server-verified completed game is required.');
     const state = JSON.parse(run.state);
-    if (state.totalDistance !== 384399) return { legacyRecord: true, profile: profile(await player(p.id)) };
+    if (state.totalDistance !== 384399) return { legacyRecord: true, earned: run.score, profile: profile(await player(p.id)) };
     const name = await ensureName(await player(p.id));
     const distance = Math.min(384399, Math.max(0, state.distance));
     const elapsed = run.elapsed_ms;
     if (!Number.isFinite(elapsed) || elapsed < state.elapsed - 2000 || elapsed < 0) fail(409, 'Invalid verified flight time.');
     const score = Math.round((distance - elapsed / 1000) * 1000) / 1000;
-    await stmt('insert into moon_flight_scores(run_id,player,period,score,distance,elapsed_ms,landed,achieved_at) values(?,?,?,?,?,?,?,?) on conflict(run_id) do nothing', run.id, p.id, week(new Date(run.finished_at)), score, distance, elapsed, run.landed, run.finished_at).run();
+    const table = scoreTable(state.scope);
+    await stmt(`insert into ${table}(run_id,player,period,score,distance,elapsed_ms,landed,achieved_at) values(?,?,?,?,?,?,?,?) on conflict(run_id) do nothing`, run.id, p.id, week(new Date(run.finished_at)), score, distance, elapsed, run.landed, run.finished_at).run();
     await stmt('update moon_runs set consumed=1 where id=? and player=?', runId, p.id).run();
-    return { playerName: name, profile: profile(await player(p.id)), score };
+    return { playerName: name, profile: profile(await player(p.id)), score, earned: run.score };
   }
   async function submit(p, runId) { return saveFlightScore(p, runId); }
   async function arrival(p, runId) {
@@ -168,7 +275,7 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
         text += decoder.decode();
         try { input = JSON.parse(text || '{}'); } catch { fail(400, 'Invalid JSON.'); }
       }
-      if (input?.namespace !== APP || (input.scope || 'default') !== 'default') fail(404, 'Unknown leaderboard.');
+      if (input?.namespace !== APP || !['default', 'mars'].includes(input.scope || 'default')) fail(404, 'Unknown leaderboard.');
       const action = input.action;
       let result;
       if (action === 'capabilities' && request.method === 'GET') result = { protocol: 2, singleServer: true, metric: 'distance_minus_seconds', order: 'desc', clock: 'server', timeZone: 'America/Toronto', automaticDeletion: false, legacyNameTransferEnabled: false, authoritativeProgression: true };
@@ -192,12 +299,13 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
           await limit(`api:${p.id}`, 1200);
           if (input.playerId && input.playerId !== p.id) fail(403, 'Identity does not match.');
           if (['event', 'submit', 'arrival', 'abandon'].includes(action) && (typeof input.runId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.runId))) fail(400, 'A valid flight ID is required.');
-          if (request.method === 'GET') result = await snapshot(p, input.period);
+          if (request.method === 'GET') result = action === 'replay' ? await replay(p, scoreTable(input.scope)) : await snapshot(p, input.period, scoreTable(input.scope));
           else if (request.method === 'PATCH') result = { playerName: await rename(p, input.playerName) };
           else if (action === 'profile') result = { playerId: p.id, profile: profile(p), activeRunId: p.active_run, playerName: await ensureName(p) };
           else if (action === 'leaderboard_name') result = { playerName: p.name || '', registered: !!p.name };
           else if (action === 'leaderboard_period') result = { period: await rankPeriod() };
-          else if (action === 'start') result = await start(p, input.input);
+          else if (action === 'sheet_settings' && request.method === 'POST') result = await changeSheetMode(p, input.mode);
+          else if (action === 'start') result = await start(p, input.input, input.scope || 'default');
           else if (action === 'event') result = await gameEvent(p, input.runId, input.event);
           else if (action === 'arrival') result = await arrival(p, input.runId);
           else if (action === 'submit') result = await submit(p, input.runId);
@@ -207,11 +315,17 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
             result = { profile: profile(await player(p.id)) };
           } else if (action === 'upgrade') {
             if (!['speed','fuel','money'].includes(input.type)) fail(400, 'Unknown upgrade.');
-            const value = p[input.type], price = cost(input.type, value);
+            const type = input.type, value = p[type];
+            const levels = activeSheet(p)?.[type];
+            const stage = levels?.values.indexOf(fromStored(type, value)) ?? -1;
+            const price = stage >= 0 ? levels.costs[stage] : cost(type, value);
+            const next = stage >= 0 ? levels.values[stage + 1] : undefined;
+            const target = next == null ? nextValue(type, value) : toStored(type, next);
             if (input.expected !== (input.type === 'money' ? value / 10 : value)) fail(409, 'Upgrade already changed. Refresh your balance.');
             const max = input.type === 'fuel' ? 600 : input.type === 'speed' ? 10000 : 100000;
+            if (price == null || target <= value) fail(409, 'This upgrade is already at its maximum.');
             // Identifiers come only from the fixed allowlist above.
-            const changed = await stmt(`update moon_players set ${input.type}=?,coins=coins-? where id=? and coins>=? and ${input.type}=? and ${input.type}<? and active_run is null`, nextValue(input.type, value), price, p.id, price, value, max).run();
+            const changed = await stmt(`update moon_players set ${input.type}=?,coins=coins-? where id=? and coins>=? and ${input.type}=? and ${input.type}<? and active_run is null and sheet_state is ?`, target, price, p.id, price, value, max, p.sheet_state ?? null).run();
             if (!changed.meta.changes) fail(409, 'Upgrade unavailable. Refresh your balance.');
             result = { profile: profile(await player(p.id)) };
           } else fail(400, 'Unknown action.');

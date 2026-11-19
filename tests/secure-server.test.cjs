@@ -18,12 +18,12 @@ function d1() {
   }
   return { db, prepare, async batch(statements) { db.exec('BEGIN'); try { const results=statements.map(s=>s.sync()); db.exec('COMMIT'); return results; } catch(e) { db.exec('ROLLBACK'); throw e; } } };
 }
-async function server() {
+async function server(options = {}) {
   const { createMoonService } = await import('../server/moon-service.mjs');
   const database=d1();
   let now=Date.parse('2026-10-22T12:00:00Z');
   const admin='a'.repeat(64);
-  const service=createMoonService(database,{adminSecret:admin,now:()=>new Date(now)});
+  const service=createMoonService(database,{adminSecret:admin,now:()=>new Date(now), ...options});
   async function request(action, body={}, token, method='POST') {
     const params={namespace:'shout-out-to-the-moon',scope:'default',...body,...(action?{action}:{})};
     const url=new URL('https://moon.example/api/leaderboard');
@@ -306,7 +306,7 @@ test('real game + client + secure API submits landing and preserves the original
   assert.equal(run('state.coins'),500);
 });
 
-test('weekly best heights exclude self and Moon arrivals; new week resets visible records, not history', async () => {
+test('monthly best heights exclude self and reset at Toronto midnight on the first', async () => {
   const s = await server();
   await finish(s, {speed:10,fuel:10,money:1});
   const name = (await s.api('profile')).playerName;
@@ -319,7 +319,7 @@ test('weekly best heights exclude self and Moon arrivals; new week resets visibl
   assert.ok(Math.abs(board.markers[0].distance-7500)<1e-6);
   assert.equal(board.moonFinishers, 0);
   assert.equal((await s.api(null, {}, 'GET')).markers.length, 0);
-  // A second verified flight replaces this player's weekly marker, not a new person.
+  // A second verified flight replaces this player's monthly marker, not a new person.
   await finish(s, {speed:10,fuel:10,money:1}, {db:80});
   board = await s.request(null, {}, other.token, 'GET');
   assert.equal(board.markers.length, 1); assert.ok(Math.abs(board.markers[0].distance-8000)<1e-6);
@@ -332,7 +332,13 @@ test('weekly best heights exclude self and Moon arrivals; new week resets visibl
   assert.equal((await s.api(null, {}, 'GET')).entries.length, 1);
   s.setDate('2026-10-26T04:00:00Z'); // Monday local midnight.
   board = await s.request(null, {}, other.token, 'GET');
-  assert.equal(board.entries.length, 0); assert.equal(board.markers.length, 0); assert.equal(board.moonFinishers, 0);
+  assert.equal(board.entries.length, 0); assert.equal(board.markers.length, 0); assert.equal(board.moonFinishers, 1);
+  s.setDate('2026-11-01T03:59:59Z');
+  assert.equal((await s.request(null, {}, other.token, 'GET')).moonFinishers, 1);
+  s.setDate('2026-11-01T04:00:00Z');
+  board = await s.request(null, {}, other.token, 'GET');
+  assert.equal(board.markerPeriod, '2026-11');
+  assert.equal(board.moonFinishers, 0);
   assert.equal((await s.api(null, {period:'all'}, 'GET')).entries.length, 1);
   assert.equal(s.db.prepare('select count(*) as n from moon_flight_scores').get().n, 3);
 });
@@ -347,4 +353,123 @@ test('failed-flight ranks prefer more distance, subtract verified elapsed second
   assert.equal((await s.api(null, {}, 'GET')).currentPlayer.score, 5990);
   await s.api('submit', {runId:second.runId});
   assert.equal(s.db.prepare('select count(*) as n from moon_flight_scores').get().n, 2);
+});
+
+test('a replay exposes only verified flight positions and never the caller’s own record', async () => {
+  const s = await server();
+  await finish(s, {speed:10,fuel:10,money:1});
+  assert.deepEqual((await s.api('replay', {}, 'GET')).samples, null);
+  const other = await s.request('identity');
+  const replay = await s.request('replay', {}, other.token, 'GET');
+  assert.equal(replay.status, 200);
+  assert.deepEqual(Object.keys(replay).sort(), ['name', 'samples', 'status']);
+  assert.equal(replay.name, (await s.api('profile')).playerName);
+  assert.deepEqual(replay.samples[0], [0, 0]);
+  assert.ok(replay.samples.length > 2);
+  assert.ok(Math.abs(replay.samples.at(-1)[1] - 7500) < 1e-6);
+  for (let i = 1; i < replay.samples.length; i++) {
+    assert.ok(replay.samples[i][0] > replay.samples[i-1][0]);
+    assert.ok(replay.samples[i][1] >= replay.samples[i-1][1]);
+  }
+});
+
+
+test('a stale unsubmitted launch no longer blocks a new flight or its coins', async () => {
+  const s = await server();
+  const stats = { speed: 10, fuel: 10, money: 1 };
+  const input = { rulesVersion: 2, recoverStale: true, loadout: stats };
+  const abandoned = await s.api('start', { input });
+  assert.equal(abandoned.status, 200);
+  assert.equal((await s.api('start', { input })).status, 409);
+  s.advance(26000);
+  const started = await s.api('start', { input });
+  assert.equal(started.status, 200);
+  s.advance(10000);
+  assert.equal((await s.api('arrival', {runId: started.runId})).status, 200);
+  const frames = [{type:'tick', delta:10000, db:75}];
+  assert.equal((await s.api('event', {runId:started.runId, event:{type:'frames', sequence:0, frames}})).status, 200);
+  assert.equal((await s.api('event', {runId:started.runId, event:{type:'finish'}})).status, 200);
+  for (let attempt=0; attempt<2; attempt++) {
+    const result = await s.api('submit', {runId:started.runId});
+    assert.equal(result.earned, 75);
+    assert.equal(result.profile.coins, 75);
+  }
+});
+
+test('a player with an older best can still supply a verified replay', async () => {
+  const s = await server();
+  const stats = {speed:10,fuel:10,money:1};
+  const best = await finish(s, stats, {db:80});
+  await finish(s, stats, {db:75});
+  s.db.prepare("update moon_runs set state=json_remove(json_set(state,'$.sequence',2), '$.replay') where id=?").run(best.runId);
+  const other = await s.request('identity');
+  const replay = await s.request('replay', {}, other.token, 'GET');
+  assert.equal(replay.status, 200);
+  assert.ok(Math.abs(replay.samples.at(-1)[1] - 7500) < 1e-6);
+  // A complete single legacy batch is sufficient to reconstruct the real path.
+  s.db.prepare("update moon_runs set state=json_remove(json_set(state,'$.sequence',1,'$.lastBatch',?), '$.replay') where id=?")
+    .run(JSON.stringify([{type:'tick',delta:10000,db:80}]),best.runId);
+  const legacy = await s.request('replay', {}, other.token, 'GET');
+  assert.deepEqual(legacy.samples[0], [0,0]);
+  assert.ok(Math.abs(legacy.samples.at(-1)[0] - 10000) < 1e-6);
+  assert.ok(Math.abs(legacy.samples.at(-1)[1] - 8000) < 1e-6);
+});
+
+
+test('sheet settings use the official wallet and ranking, with both loadouts preserved', async () => {
+  const { parseSheetSettings } = await import('../server/sheet-settings.mjs');
+  const csv = [
+    'Upgrade stat,Start,1 upgrade,2 upgrades,3 upgrades,4 upgrades',
+    'Speed (×),15,25,35,45,55', 'Cost (coins),20,30,40,50,60', ',,,,,',
+    'Fuel (t),12,17,22,27,32', 'Cost (coins),20,30,40,50,60', ',,,,,',
+    'Money (×),1.2,1.3,1.4,1.5,1.6', 'Cost (coins),20,30,40,50,60',
+  ].join('\n');
+  assert.throws(() => parseSheetSettings(csv.replace('15,25', '15,#REF!')));
+  const s = await server({ loadSettings: async () => parseSheetSettings(csv) });
+  const approval = await s.approve({speed:11,fuel:13,money:1.1,coins:158});
+  await s.api('migrate',{code:approval.code});
+  const loaded = await s.api('sheet_settings', {mode:'sheet', speed:9999});
+  assert.equal(loaded.status, 200);
+  assert.deepEqual([loaded.profile.speed, loaded.profile.fuel, loaded.profile.money, loaded.profile.coins], [15,12,1.2,158]);
+  const upgrade = await s.api('upgrade', {type:'speed',expected:15});
+  assert.equal(upgrade.status, 200);
+  assert.equal(upgrade.profile.speed, 25);
+  assert.equal(upgrade.profile.coins, 138);
+  const run = await finish(s, {speed:25,fuel:12,money:1.2});
+  const score = await s.api('submit', {runId:run.runId});
+  assert.equal(score.earned, 270);
+  assert.equal(score.profile.coins, 408);
+  const board = await s.api(null,{period:'all'},'GET');
+  assert.equal(board.currentPlayer.score, 22488);
+  const viewer = await s.request('identity');
+  const replay = await s.request('replay', {}, viewer.token, 'GET');
+  assert.ok(Math.abs(replay.samples.at(-1)[1] - 22500) < 1e-6);
+  const restored = await s.api('sheet_settings', {mode:'default'});
+  assert.deepEqual([restored.profile.speed,restored.profile.fuel,restored.profile.money,restored.profile.coins], [11,13,1.1,408]);
+  assert.equal(restored.profile.sheetSettings, null);
+  const reloaded = await s.api('sheet_settings', {mode:'sheet'});
+  assert.equal(reloaded.profile.speed, 25);
+  assert.equal(reloaded.profile.coins, 408);
+});
+
+test('Mars ranks only Mars launches and reuses the Moon player and nickname', async () => {
+  const s = await server();
+  const mars = (action, body = {}, method) => s.api(action, { ...body, scope: 'mars' }, method);
+  await s.api(null, { playerName: 'LunarRabbit' }, 'PATCH');
+  const shared = await mars('profile');
+  assert.equal(shared.playerId, s.id.playerId);
+  assert.equal(shared.playerName, 'LunarRabbit');
+  const stats = { speed: 10, fuel: 10, money: 1 };
+  await finish(s, stats);
+  const before = await s.api(null, {}, 'GET');
+  assert.equal(before.entries.length, 1);
+  assert.equal((await mars(null, {}, 'GET')).entries.length, 0);
+  const { runId } = await finish({ ...s, api: mars }, stats);
+  await s.api('submit', { runId });
+  assert.equal((await mars(null, {}, 'GET')).currentPlayer.name, 'LunarRabbit');
+  assert.deepEqual((await s.api(null, {}, 'GET')).entries, before.entries);
+  assert.equal(s.db.prepare('select count(*) as n from moon_flight_scores').get().n, 1);
+  assert.equal(s.db.prepare('select count(*) as n from mars_flight_scores').get().n, 1);
+  await mars(null, { playerName: 'SpaceRabbit' }, 'PATCH');
+  assert.equal((await s.api(null, {}, 'GET')).currentPlayer.name, 'SpaceRabbit');
 });

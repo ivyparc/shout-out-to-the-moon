@@ -37,7 +37,7 @@ select {
 .leaderboard-content { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .leaderboard-toolbar { display: flex; align-items: center; flex-wrap: wrap; flex: none; gap: 7px; padding: 8px; background: #f4f7fa; border-bottom: 1px solid #d8dfe7; }
 .leaderboard-panel input, .leaderboard-panel select { max-width: 100%; min-width: 0; padding: 7px; border: 1px solid #c4cbd4; border-radius: 8px; background: #fff; color: #4b5365; font-size: 16px; }
-.leaderboard-period-label select { max-width: 125px; min-height: 34px; font-size: 12px; font-weight: 700; }
+.leaderboard-period-label { font-size: 12px; }
 .leaderboard-sort { margin-left: auto; color: #8491a4; font-size: 10px; }
 .leaderboard-panel .leaderboard-refresh { min-height: 34px; width: 34px; padding: 0; border: 0; color: #738baa; background: #e4edf7; font-size: 23px; line-height: 1; }
 .leaderboard-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: #bacbdf #f1f4f8; background: #fffefa; }
@@ -214,6 +214,10 @@ select {
 }
 
 .background-track {
+  /* Enlarge the scenery around the launch base and scale its travel equally. */
+  --scenery-zoom: 1.75;
+  transform-origin: center bottom;
+  transform: translateY(calc(var(--scroll) * (var(--scenery-zoom) - 1))) scale(var(--scenery-zoom));
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -754,7 +758,7 @@ select {
 .gauge-arc path { fill: none; stroke-width: 11; stroke-linecap: round; }
 .gauge-track { stroke: #66617f; }
 .gauge-value { stroke: #ffb545; stroke-dasharray: 0 100; transition: stroke-dasharray 120ms linear, stroke 200ms; }
-.gauge-fuel .gauge-value { stroke: #70ce88; }
+.gauge-fuel .gauge-value { stroke: #70ce88; stroke-dasharray: none; transition: stroke 200ms; }
 .gauge-reading { position: absolute; left: 0; right: 0; top: 28%; display: flex; align-items: center; flex-direction: column; }
 .gauge-reading .hud-icon { width: 23px; height: 23px; margin-bottom: 3px; color: #ffc25a; }
 .gauge-fuel .gauge-reading .hud-icon { color: #70ce88; }
@@ -875,3 +879,79 @@ select {
 /* Distance ticks travel down the viewport independently of the scenery. */
 .distance-markers { top: 17%; bottom: 21%; display: block; width: 74px; overflow: hidden; contain: layout paint; }
 .distance-markers span { position: absolute; top: 0; left: 0; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; transition: transform 50ms linear; }
+
+.flight-marker.best.alongside { margin-left: 44px; }
+.replay-rocket {
+  position: absolute;
+  left: 72%;
+  width: clamp(24px, 11cqw, 49px);
+  transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: none;
+}
+.replay-rocket[hidden] { display: none; }
+
+.replay-rocket img {
+  display: block;
+  width: 100%;
+  opacity: .66;
+  filter: saturate(.7);
+}
+.replay-name {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 92px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1.3;
+}
+.replay-name:empty { display: none; }
+
+.sheet-settings {
+  position: absolute;
+  top: calc(max(12px, env(safe-area-inset-top, 0px)) + 42px);
+  right: 5.2%;
+  z-index: 17;
+  text-align: right;
+}
+.sheet-settings-buttons { display: flex; justify-content: flex-end; gap: 5px; }
+.sheet-settings button {
+  padding: 4px 7px;
+  border: 1px solid #ffffff45;
+  border-radius: 7px;
+  background: #24223f80;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.sheet-settings button:disabled { opacity: .55; cursor: default; }
+.sheet-settings-message {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #24223f9e;
+  color: #fff;
+  font-size: 10px;
+}
+.sheet-settings-message:empty { display: none; }
+
+.mission-menu { min-height: 100dvh; display: grid; place-items: center; background: #120f28; color: #fff8ec; padding: 24px; box-sizing: border-box; }
+.mission-menu section { width: min(100%, 400px); }
+.mission-menu h1 { margin: 0 0 24px; font-size: clamp(26px, 6vw, 38px); }
+.mission-card { width: 100%; display: flex; align-items: center; gap: 24px; padding: 22px; margin: 12px 0; border: 1px solid #666285; border-radius: 20px; background: #282646; color: inherit; font: inherit; font-size: 22px; font-weight: 700; cursor: pointer; }
+.mission-card:focus-visible { outline: 3px solid white; }
+.mission-card img { width: 64px; height: 64px; object-fit: contain; }
+.mars-card { background: #38233b; border-color: #8a5b69; }
+.mission-card picture { display: grid; }
+.mars-flight .background-track { --scenery-zoom: 1; }
+.mars-strip { background-color: #101b51; background-size: cover; background-position: center; }
+.mars-prop { position: absolute; width: 15%; left: 13%; top: 43%; }
+.mars-celebration { position: absolute; width: 100%; inset: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .mars-celebration { display: none; } }

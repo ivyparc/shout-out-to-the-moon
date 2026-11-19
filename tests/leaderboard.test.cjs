@@ -109,6 +109,7 @@ test('viewing a ranking never registers a name or submits a score', async () => 
   const f = await fixture();
   await f.run('leaderboard.refresh()');
   assert.deepEqual(f.calls.map(call => call.body.action || call.method), ['identity', 'GET']);
+  assert.equal(f.calls.at(-1).body.period, 'all');
   assert.equal(f.submits, 0);
 });
 

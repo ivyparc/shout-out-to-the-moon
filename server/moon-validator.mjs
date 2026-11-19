@@ -5,20 +5,21 @@ const fail = (message, status = 400) => { throw Object.assign(new Error(message)
 const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
 const TOTAL_DISTANCE = 384399;
 
-export function moonValidator({ resolveLoadout, allowFailures = false } = {}) {
+export function moonValidator({ resolveLoadout, allowFailures = false, sheetMode = false } = {}) {
   if (typeof resolveLoadout !== "function") throw new Error("A trusted Moon loadout resolver is required.");
   return {
     async start({ input, now }) {
       const stats = await resolveLoadout(input?.loadoutProof);
-      if (!stats || !finite(stats.speed, 10, 10000) || !Number.isInteger(stats.speed) ||
-          !finite(stats.fuel, 10, 600) || !Number.isInteger(stats.fuel) ||
-          !finite(stats.money, 1, 10000) || Math.abs(stats.money * 10 - Math.round(stats.money * 10)) > 1e-8) {
+      if (!stats || !finite(stats.speed, sheetMode ? 1 : 10, 10000) || !Number.isInteger(stats.speed) ||
+          !finite(stats.fuel, sheetMode ? 1 : 10, 600) || !Number.isInteger(stats.fuel) ||
+          !finite(stats.money, sheetMode ? .1 : 1, 10000) || Math.abs(stats.money * 10 - Math.round(stats.money * 10)) > 1e-8) {
         fail("Invalid verified loadout.", 403);
       }
       if (input?.loadout?.speed !== stats.speed || input?.loadout?.fuel !== stats.fuel || input?.loadout?.money !== stats.money) {
         fail("Local upgrades differ from verified upgrades.", 409);
       }
       return { state: { stats, totalDistance: input?.rulesVersion === 2 ? TOTAL_DISTANCE : 19500, startedAt: now.toISOString(), phase: "flying", distance: 0,
+        replay: input?.rulesVersion === 2 ? [[0, 0]] : null,
         fuel: stats.fuel, elapsed: 0, hold: 0, holdOut: 0, holdAt: 0, clapAt: 0,
         lastClapAt: -1000, claps: 0, sequence: 0, lastBatch: "", landingAt: 0 }, challenge: { protocol: "moon-flight-v1" } };
     },
@@ -53,7 +54,17 @@ export function moonValidator({ resolveLoadout, allowFailures = false } = {}) {
           const flightDelta = Math.min(frame.delta, s.fuel * 1000);
           s.fuel -= frame.delta / 1000;
           if (s.phase === "flying") {
+            const distanceBefore = s.distance;
             s.distance = Math.min(totalDistance, s.distance + frame.db * s.stats.speed * flightDelta / 1000);
+            if (s.replay) {
+              const travelMs = frame.db && s.distance >= totalDistance
+                ? (s.distance - distanceBefore) / (frame.db * s.stats.speed) * 1000 : flightDelta;
+              const elapsed = s.elapsed - frame.delta + travelMs;
+              const last = s.replay.at(-1);
+              if (elapsed > last[0] && (elapsed - last[0] >= 500 || s.distance >= totalDistance || s.fuel <= 1e-9)) {
+                s.replay.push([elapsed, s.distance]);
+              }
+            }
           }
           if (s.fuel <= 1e-9) { s.fuel = 0; flightFailure("Flight ran out of fuel."); continue; }
           if (s.phase === "flying" && s.distance >= totalDistance) { s.phase = "holdPrompt"; s.holdAt = s.elapsed; }

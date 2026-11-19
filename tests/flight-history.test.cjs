@@ -130,6 +130,92 @@ test('flight hint disappears at three seconds and returns on a new launch', () =
   assert.equal(run('getCenterMessage(STRINGS.en)'), 'Make some noise!');
 });
 
+test('another player’s rocket stays visible through playback and leaves only with player travel after it ends', () => {
+  const { run } = game();
+  run(`startGame();
+    const replayName = { textContent: '' };
+    const replayRocket = { style: {}, querySelector: () => replayName };
+    const originalQuery = root.querySelector.bind(root);
+    root.querySelector = selector => selector === '.replay-rocket' ? replayRocket : originalQuery(selector);
+    const endpointDistance = 1000;`);
+  const y = () => run('parseFloat(replayRocket.style.top)');
+  for (const lead of [0, 4000]) {
+    run(`state.replayFlight = { samples: [[0, 0], [500, 500], [1000, 1000]], name: 'MoonRabbit', cursor: 0 };
+      state.distanceKm = endpointDistance + ${lead};
+      state.flightStartedAt = Date.now() - 500;
+      updateReplayRocket();`);
+    assert.equal(run('replayRocket.hidden'), false);
+    assert.ok(y() < 100);
+    run('state.flightStartedAt -= 499; updateReplayRocket();');
+    const beforeEnd = y();
+    run('state.flightStartedAt--; updateReplayRocket();');
+    const atEnd = y();
+    assert.equal(run('replayRocket.hidden'), false);
+    assert.equal(run('replayName.textContent'), 'MoonRabbit');
+    assert.ok(atEnd < 100);
+    assert.ok(Math.abs(atEnd - beforeEnd) < .1);
+
+    run('state.flightStartedAt -= 10000; updateReplayRocket();');
+    assert.equal(run('replayRocket.hidden'), false);
+    assert.equal(y(), atEnd);
+    run('state.distanceKm += 1000; updateReplayRocket();');
+    assert.ok(y() > atEnd && y() < 100);
+    run('state.distanceKm += 3000; updateReplayRocket();');
+    assert.ok(y() > 100);
+  }
+  run('reset();');
+  assert.equal(run('replayRocket.hidden'), true);
+});
+
+test('replay movement follows the recorded flight and the actual distance gap independently of the background', () => {
+  const { run } = game();
+  run(`startGame();
+    const replayRocket = { style: {}, querySelector: () => null };
+    const originalQuery = root.querySelector.bind(root);
+    root.querySelector = selector => selector === '.replay-rocket' ? replayRocket : originalQuery(selector);
+    state.replayFlight = { samples: [[0, 0], [20000, 20000]], name: '', cursor: 0 };
+    state.flightStartedAt = Date.now() - 10000;
+    state.distanceKm = 10000;
+    updateReplayRocket();`);
+  const y = () => run('parseFloat(replayRocket.style.top)');
+  const alongside = y();
+  run('state.sceneScroll += 5; updateReplayRocket();');
+  assert.equal(y(), alongside, 'scenery easing must not move the opponent');
+  run('state.flightStartedAt -= 1000; updateReplayRocket();');
+  assert.ok(y() < alongside - 10, 'the opponent advances while the player is stationary');
+  run('state.distanceKm += 2000; updateReplayRocket();');
+  assert.ok(y() > alongside + 10, 'the player can overtake the opponent');
+  run('state.distanceKm = 11000; updateReplayRocket();');
+  assert.ok(Math.abs(y() - alongside) < .001, 'equal travelled distance puts the rockets alongside');
+});
+
+test('replay keeps moving between UI ticks and smooths a player distance step', () => {
+  const { run } = game();
+  run(`startGame();
+    const replayRocket = { style: {}, querySelector: () => null };
+    const originalQuery = root.querySelector.bind(root);
+    root.querySelector = selector => selector === '.replay-rocket' ? replayRocket : originalQuery(selector);
+    const frames = [];
+    window.requestAnimationFrame = callback => frames.push(callback);
+    state.replayFlight = { samples: [[0, 0], [20000, 20000]], name: '', cursor: 0 };
+    state.flightStartedAt = Date.now() - 1000;
+    updateUi(); updateUi();`);
+  assert.equal(run('frames.length'), 1);
+  run('frames.shift()(0)');
+  const start = run('parseFloat(replayRocket.style.top)');
+  run('state.flightStartedAt -= 16; frames.shift()(16)');
+  const next = run('parseFloat(replayRocket.style.top)');
+  assert.ok(next < start);
+  run('state.distanceKm += 1000; frames.shift()(32)');
+  const firstStep = run('parseFloat(replayRocket.style.top)');
+  run('frames.shift()(48)');
+  assert.ok(firstStep > next);
+  assert.ok(run('parseFloat(replayRocket.style.top)') > firstStep);
+  run('reset(); frames.shift()(64);');
+  assert.equal(run('replayRocket.hidden'), true);
+  assert.equal(run('frames.length'), 0);
+});
+
 test('minimap never shows Last, including reused tries and zero distance', () => {
   const { run, map } = game();
   for (const distance of [5000, 6999.5, 0]) {
@@ -203,13 +289,13 @@ test('distance ticks move down, retain their values and never change scale at la
   for(const km of [12,50,85,600,10000,200000]) {
     run(`state.distanceKm=${km};`);
     assert.equal(run('distanceRulerLayout().step'),step);
-    assert.equal(run('distanceRulerTicks().every(t=>t.distance%5===0)'),true);
+    assert.equal(run('distanceRulerTicks().every(t=>t.distance%500===0)'),true);
     const ticks=JSON.parse(run('JSON.stringify(distanceRulerTicks())'));
     run('state.distanceKm+=20;');
     const later=JSON.parse(run('JSON.stringify(distanceRulerTicks())'));
     const shared=ticks.find(t=>later.some(n=>n.distance===t.distance));
     assert.ok(shared);
-    assert.ok(Math.abs(later.find(n=>n.distance===shared.distance).y-shared.y-12.8)<1e-8);
+    assert.ok(Math.abs(later.find(n=>n.distance===shared.distance).y-shared.y-3.84)<1e-8);
   }
 });
 
@@ -220,13 +306,28 @@ test('launch scrolls briskly without skipping screens or changing distance', () 
   assert.ok(run('distanceRulerTicks().length')>3);
   run('for(let i=1;i<200;i++)updateGame(50);');
   assert.ok(Math.abs(run('state.distanceKm')-7000)<1e-8);
-  assert.ok(run('getSceneWorldScrollRatio()')>3);
-  assert.ok(run('getSceneWorldScrollRatio()')<4);
+  const travel = run('getSceneWorldScrollRatio()');
+  assert.ok(travel > 6.2 && travel < 6.45, `Expected just over six terrain strips of travel, got ${travel}`);
   const stopped=run('getSceneWorldScrollRatio()');
   run('updateGame(50);');
   assert.equal(run('getSceneWorldScrollRatio()'),stopped);
   run('reset();');
   assert.equal(run('getSceneWorldScrollRatio()'),0);
+});
+
+test('background pace stays steady at equal dB from early to late ascent', () => {
+  for (const [speed, fuel, lateSecond] of [[10, 10, 8], [100, 30, 26], [300, 40, 15]]) {
+    const {run} = game();
+    run(`state.speedMultiplier=${speed};state.fuelCapacity=${fuel};startGame();setMeasuredDb(70);`);
+    const positions = [];
+    for (let second=1; second<=lateSecond+1; second++) {
+      run('for(let tick=0;tick<20;tick++)updateGame(50);');
+      positions[second] = run('getSceneWorldScrollRatio()');
+    }
+    const early = positions[3] - positions[2];
+    const late = positions[lateSecond+1] - positions[lateSecond];
+    assert.ok(early > .2 && Math.abs(late - early) < .005, `Speed ×${speed}: ${early} vs ${late}`);
+  }
 });
 
 test('powerful engines and delayed frames cannot skip background screens', () => {
@@ -290,5 +391,14 @@ test('minimap Best dot meets the miniature nose at launch, midflight and Moon', 
     run(`state.flightHistory=[{try:1,distance:TOTAL_DISTANCE_KM*${progress}}];renderFlightMarkers();`);
     assert.ok(map.innerHTML.includes(position.tipBottom));
     assert.doesNotMatch(map.innerHTML,/Last|<span>L<\/span>/);
+  }
+});
+
+test('results show the current try and show the prior best unless it was beaten', () => {
+  const {run, markers} = game();
+  for (const distance of [4000, 5000, 6000]) {
+    run(`state.flightHistory=[{try:1,distance:5000},{try:2,distance:${distance}}];renderFlightMarkers();`);
+    assert.match(markers.innerHTML, /<span>T2<\/span>/);
+    assert.equal(markers.innerHTML.includes('<span>Best</span>'), distance <= 5000);
   }
 });
