@@ -2,6 +2,12 @@ import { moonValidator } from './moon-validator.mjs';
 import { readSheetSettings } from './sheet-settings.mjs';
 
 const scoreTable = scope => scope === 'mars' ? 'mars_flight_scores' : 'moon_flight_scores';
+const scoreMetric = 'distance_and_arrival_bonus';
+const flightScore = `case
+  when landed = 0 then distance / 1000.0
+  when elapsed_ms >= 120000 then 384
+  else (384400 + (120000 - elapsed_ms) * 3) / 1000.0
+end`;
 const APP = 'shout-out-to-the-moon';
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -85,27 +91,36 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     if (!['active','all'].includes(selected) && !/^\d{4}-\d{2}-\d{2}$/.test(selected)) fail(400, 'Invalid period.');
     const activePeriod = await rankPeriod();
     const period = selected === 'active' ? activePeriod : selected;
-    const rows = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by score desc,achieved_at asc) as pick from ${table} s join moon_players p on p.id=s.player where (?='all' or s.period=?)), ranked as (select *,row_number() over(order by score desc,achieved_at asc,player asc) as rank from best where pick=1) select * from ranked where rank<=100 or player=? order by rank`, period, period, p.id);
-    const map = r => ({ rank: r.rank, name: r.name, score: r.score, distance: r.distance, elapsedMs: r.elapsed_ms, landed: !!r.landed, updatedAt: new Date(r.achieved_at).toISOString(), isToday: day(new Date(r.achieved_at)) === day(now()) });
+    const rows = await all(`with scored as (
+      select s.*, ${flightScore} as flight_points from ${table} s where (?='all' or s.period=?)
+    ), best as (
+      select s.*, p.name, row_number() over(partition by s.player order by flight_points desc, achieved_at asc) as pick
+      from scored s join moon_players p on p.id=s.player
+    ), ranked as (
+      select *, row_number() over(order by flight_points desc, achieved_at asc, player asc) as rank from best where pick=1
+    ) select * from ranked where rank<=100 or player=? order by rank`, period, period, p.id);
+    const map = r => ({ rank: r.rank, name: r.name, score: r.flight_points, distance: r.distance, elapsedMs: r.elapsed_ms, landed: !!r.landed, updatedAt: new Date(r.achieved_at).toISOString(), isToday: day(new Date(r.achieved_at)) === day(now()) });
     const markerPeriod = month(now());
     const since = monthStart(markerPeriod);
     const heights = await all(`with best as (select s.*,p.name,row_number() over(partition by s.player order by distance desc,landed desc,achieved_at asc) as pick from ${table} s join moon_players p on p.id=s.player where s.achieved_at>=?) select name,distance,landed,achieved_at from best where pick=1 and player<>? order by distance desc`, since, p.id);
     return { entries: rows.filter(r => r.rank <= 100).map(map), currentPlayer: rows.find(r => r.player === p.id) ? map(rows.find(r => r.player === p.id)) : null,
       markerPeriod, markers: heights.filter(r => !r.landed), moonFinishers: (await one(`select count(distinct player) as total from ${table} where achieved_at>=? and landed=1`, since)).total,
-      metric: 'distance_minus_seconds', order: 'desc', activePeriod, period, periods: (await all(`select distinct period from ${table} order by period desc`)).map(r => r.period) };
+      metric: scoreMetric, order: 'desc', activePeriod, period, periods: (await all(`select distinct period from ${table} order by period desc`)).map(r => r.period) };
   }
   async function replay(p, table) {
-    const row = await one(`with best as (
-      select s.*, row_number() over(partition by player order by score desc, achieved_at asc, run_id asc) as pick
-      from ${table} s
+    const row = await one(`with scored as (
+      select s.*, ${flightScore} as flight_points from ${table} s
+    ), best as (
+      select s.*, row_number() over(partition by player order by flight_points desc, achieved_at asc, run_id asc) as pick
+      from scored s
     ), ranked as (
-      select *, row_number() over(order by score desc, achieved_at asc, player asc) as rank
+      select *, row_number() over(order by flight_points desc, achieved_at asc, player asc) as rank
       from best where pick=1
     ), own as (select rank from ranked where player=?), playable as (
       select s.player, s.distance, r.state, row_number() over(
-        partition by s.player order by s.score desc, s.achieved_at asc, s.run_id asc
+        partition by s.player order by s.flight_points desc, s.achieved_at asc, s.run_id asc
       ) as pick
-      from ${table} s join moon_runs r on r.id=s.run_id
+      from scored s join moon_runs r on r.id=s.run_id
       where s.player<>? and s.distance>0 and (
         json_array_length(json_extract(r.state, '$.replay'))>1
         or json_extract(r.state, '$.sequence')=1
@@ -123,10 +138,11 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     // Older multi-batch flights only retain their last batch.
     const samples = [[0, 0]];
     let elapsed = 0, distance = 0;
+    const flightPace = state.flightPace ?? 1;
     for (const frame of JSON.parse(state.lastBatch)) {
       if (frame.type !== 'tick' || frame.delta === 0) continue;
-      const speed = frame.db * state.stats.speed;
-      const delta = Math.min(frame.delta, state.stats.fuel * 1000 - elapsed,
+      const speed = frame.db * state.stats.speed * flightPace;
+      const delta = Math.min(frame.delta, state.stats.fuel * 1000 / flightPace - elapsed,
         speed > 0 ? (row.distance - distance) / speed * 1000 : Infinity);
       if (delta <= 0) break;
       elapsed += delta;
@@ -173,18 +189,20 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     await limit(`start:${p.id}`, 120, 3600);
     const stats = { speed: p.speed, fuel: p.fuel, money: p.money / 10 };
     const validator = moonValidator({ resolveLoadout: async () => stats, allowFailures: true, sheetMode: !!activeSheet(p) });
-    const initial = await validator.start({ input, now: now() });
+    const initial = await validator.start({ input, now: now(), scope });
     initial.state.scope = scope;
     const id = crypto.randomUUID();
     // A browser closed before submitting any flight data can leave the launch
     // slot occupied. Recover it after that flight's fuel window and upload grace.
-    const staleBefore = now().getTime() - (stats.fuel + 15) * 1000;
+    const startedAt = now().getTime();
     const result = await db.batch([
       stmt(`update moon_players set active_run=?,tries=tries+1 where id=? and speed=? and fuel=? and money=? and sheet_state is ?
         and (active_run is null or (?=1 and exists (
           select 1 from moon_runs where id=moon_players.active_run and player=moon_players.id
-            and started_at<=? and arrival_at is null and version=0 and finished_at is null
-        )))`, id, p.id, p.speed, p.fuel, p.money, p.sheet_state ?? null, input?.recoverStale === true ? 1 : 0, staleBefore),
+            and started_at + (coalesce(json_extract(state, '$.stats.fuel'), ?) /
+              coalesce(json_extract(state, '$.flightPace'), 1) + 15) * 1000 <= ?
+            and arrival_at is null and version=0 and finished_at is null
+        )))`, id, p.id, p.speed, p.fuel, p.money, p.sheet_state ?? null, input?.recoverStale === true ? 1 : 0, stats.fuel, startedAt),
       stmt('insert into moon_runs(id,player,state,started_at,version,settled,consumed) select ?,id,?,?,0,0,0 from moon_players where id=? and active_run=?', id, JSON.stringify(initial.state), now().getTime(), p.id, id),
     ]);
     if (!result[0].meta.changes) fail(409, 'Finish or abandon your active flight before launching.');
@@ -221,7 +239,10 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
     const distance = Math.min(384399, Math.max(0, state.distance));
     const elapsed = run.elapsed_ms;
     if (!Number.isFinite(elapsed) || elapsed < state.elapsed - 2000 || elapsed < 0) fail(409, 'Invalid verified flight time.');
-    const score = Math.round((distance - elapsed / 1000) * 1000) / 1000;
+    const { score } = await one(
+      `select ${flightScore} as score from (select ? as distance, ? as elapsed_ms, ? as landed)`,
+      distance, elapsed, run.landed,
+    );
     const table = scoreTable(state.scope);
     await stmt(`insert into ${table}(run_id,player,period,score,distance,elapsed_ms,landed,achieved_at) values(?,?,?,?,?,?,?,?) on conflict(run_id) do nothing`, run.id, p.id, week(new Date(run.finished_at)), score, distance, elapsed, run.landed, run.finished_at).run();
     await stmt('update moon_runs set consumed=1 where id=? and player=?', runId, p.id).run();
@@ -278,7 +299,7 @@ export function createMoonService(database, { adminSecret = '', now = () => new 
       if (input?.namespace !== APP || !['default', 'mars'].includes(input.scope || 'default')) fail(404, 'Unknown leaderboard.');
       const action = input.action;
       let result;
-      if (action === 'capabilities' && request.method === 'GET') result = { protocol: 2, singleServer: true, metric: 'distance_minus_seconds', order: 'desc', clock: 'server', timeZone: 'America/Toronto', automaticDeletion: false, legacyNameTransferEnabled: false, authoritativeProgression: true };
+      if (action === 'capabilities' && request.method === 'GET') result = { protocol: 2, singleServer: true, metric: scoreMetric, order: 'desc', clock: 'server', timeZone: 'America/Toronto', automaticDeletion: false, legacyNameTransferEnabled: false, authoritativeProgression: true };
       else if (action === 'identity' && request.method === 'POST') {
         await limit(`identity:${await hash(request.headers.get('cf-connecting-ip') || 'unknown')}`, 30, 3600);
         const token = secret(), id = crypto.randomUUID();

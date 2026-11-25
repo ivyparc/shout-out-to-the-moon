@@ -66,6 +66,9 @@ test('invalid stored history cannot break the game or introduce invalid markers'
 
 test('flame dimensions change on every 5dB boundary and silence hides it', () => {
   const { run, flame } = game();
+  run('render()');
+  const sprites = [...run('root.innerHTML').matchAll(/class="flame-image flame-level-(\d)"/g)];
+  assert.deepEqual(sprites.map(sprite => Number(sprite[1])), [1, 2, 3, 4, 5]);
   run('startGame();');
   for (let db=5; db<=105; db+=5) {
     run(`setMeasuredDb(${db});`);

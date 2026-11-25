@@ -203,6 +203,7 @@ select {
   bottom: 0;
   width: 24px;
   height: 24px;
+  object-fit: contain;
 }
 
 .world {
@@ -688,8 +689,6 @@ select {
 @keyframes flight-trail { to { transform: translateY(750%); } }
 @media (prefers-reduced-motion: reduce) { .speed-trails { display: none; } }
 
-.flame-left { transform: translateX(calc(-1 * var(--flame-spread, 7%))) rotate(-3deg); transform-origin: 50% 0; }
-.flame-right { transform: translateX(var(--flame-spread, 7%)) rotate(3deg); transform-origin: 50% 0; }
 .flight-markers { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
 .flight-marker { position: absolute; left: 12px; max-width: calc(100% - 24px); white-space: nowrap; color: #fffb00; font-size: 13px; line-height: 1.1; text-align: center; transform: translateY(-50%); text-shadow: 0 1px 2px #35344c; }
 .flight-marker i { display: block; width: 8px; height: 8px; margin: 0 auto 3px; background: #fffb00; border-radius: 50%; }
@@ -942,14 +941,12 @@ select {
 }
 .sheet-settings-message:empty { display: none; }
 
-.mission-menu { min-height: 100dvh; display: grid; place-items: center; background: #120f28; color: #fff8ec; padding: 24px; box-sizing: border-box; }
-.mission-menu section { width: min(100%, 400px); }
-.mission-menu h1 { margin: 0 0 24px; font-size: clamp(26px, 6vw, 38px); }
-.mission-card { width: 100%; display: flex; align-items: center; gap: 24px; padding: 22px; margin: 12px 0; border: 1px solid #666285; border-radius: 20px; background: #282646; color: inherit; font: inherit; font-size: 22px; font-weight: 700; cursor: pointer; }
-.mission-card:focus-visible { outline: 3px solid white; }
-.mission-card img { width: 64px; height: 64px; object-fit: contain; }
+.mission-menu { display: grid; place-items: center; overflow: auto; background: #120f28; color: #fff8ec; }
+.mission-options { width: 88%; max-width: 400px; padding-block: 16px; }
+.mission-menu h1 { margin: 0 0 20px; font-size: clamp(22px, 8cqw, 38px); }
+.mission-card { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: clamp(12px, 5cqw, 24px); padding: clamp(12px, 5cqw, 22px); margin: 12px 0; border: 1px solid #666285; border-radius: 20px; background: #282646; color: inherit; font: inherit; font-size: clamp(16px, 5.5cqw, 22px); font-weight: 700; text-align: left; cursor: pointer; }
+.mission-card img { flex: none; width: clamp(36px, 15cqw, 64px); aspect-ratio: 1; object-fit: contain; }
 .mars-card { background: #38233b; border-color: #8a5b69; }
-.mission-card picture { display: grid; }
 .mars-flight .background-track { --scenery-zoom: 1; }
 .mars-strip { background-color: #101b51; background-size: cover; background-position: center; }
 .mars-prop { position: absolute; width: 15%; left: 13%; top: 43%; }

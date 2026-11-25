@@ -27,7 +27,7 @@ Mobile-first POC game for Apple App Store and Google Play release planning.
 2. The current dB moves the rocket while the rocket remains visually centered.
 3. Higher dB means stronger thrust and flame, with an upper thrust limit so loud inputs cannot bypass the upgrade progression.
 4. Ascend through troposphere, stratosphere, mesosphere, thermosphere, exosphere, then space. The joined backgrounds scroll downward; UFO encounters are temporarily disabled.
-5. Hold `50-60 dB` for 5 seconds when prompted.
+5. Stay below `60 dB` for 5 seconds when prompted.
 6. Clap 3 times when prompted near the moon.
 7. Land on the moon, then say `Replay` or tap the replay control to restart.
 8. Current dB, max dB, and the energy bar are shown during play.
@@ -57,8 +57,10 @@ attempt-count unlock.
   and community records align with the visible tip; the minimap shows only Best (B),
   aligned with the miniature rocket nose. Score/reward formulas are unchanged.
 - Purchases are available between flights; prior saved balances are preserved.
-- UFOs and Separation remain disabled; five continuous seconds at 50–60 dB and
+- UFOs and Separation remain disabled; five continuous seconds below 60 dB and
   three claps remain required. Rocket vibration follows reduced-motion settings.
+- During the Mars ascent, both speed and fuel consumption are 80% of the Moon rates.
+  At the same thrust, the ascent takes about 25% longer with the same fuel cost.
 
 Run the progression and gameplay regressions with `node --test tests/*.test.cjs`.
 
@@ -77,18 +79,19 @@ to the existing Site's D1 runtime, with Moon-specific progression and migration
 operations on the same endpoint. It does not deploy the repository's separate
 Node/PostgreSQL example server or connect clients directly to a database.
 
-- Every verified completed flight, including failures, records a score of
-  `distance (km) − elapsed time (seconds)`, highest first. The server measures time
-  from launch approval to the first completion receipt; upload retries do not
-  change the accepted time. Scores are calculated from validated flight frames.
+- Both routes rank verified flights by score, highest first. A flight that misses
+  its destination earns `distance (km) / 1,000` points. A landing under 120 seconds
+  earns `384.4 + (120 − elapsed seconds) × 3` points. A landing at 120 seconds or
+  later earns 384 points. The server measures time from launch approval to the
+  first completion receipt. Upload retries preserve that time.
 - Each player has one best score per Toronto calendar week (Monday midnight).
   Weekly views reset automatically; historical flights remain available in All time.
 - Other players' weekly best heights appear at their altitude, with names shortened
   to seven characters. Moon arrivals appear as a trophy beside the minimap Moon.
 - Names are automatically assigned using Subway's adjective+noun+two-digit style;
   existing names are preserved, and manual renames retain the monthly quota.
-- New scores live in `moon_flight_scores`. Legacy coin/time tables remain intact
-  and are not mixed with the new distance-minus-time score. Existing in-progress
+- New scores live in `moon_flight_scores` and `mars_flight_scores`. Legacy coin/time tables remain intact
+  and are not mixed with current flight scores. Existing in-progress
   October flights can still settle rewards under their original distance rules.
 - Top 100, personal rank, current/past weeks, All time and nickname editing are
   available from the ranking panel. Reading rankings never creates a score.

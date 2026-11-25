@@ -4,11 +4,12 @@
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
 const TOTAL_DISTANCE = 384399;
+const MARS_FLIGHT_PACE = 0.8;
 
 export function moonValidator({ resolveLoadout, allowFailures = false, sheetMode = false } = {}) {
   if (typeof resolveLoadout !== "function") throw new Error("A trusted Moon loadout resolver is required.");
   return {
-    async start({ input, now }) {
+    async start({ input, now, scope }) {
       const stats = await resolveLoadout(input?.loadoutProof);
       if (!stats || !finite(stats.speed, sheetMode ? 1 : 10, 10000) || !Number.isInteger(stats.speed) ||
           !finite(stats.fuel, sheetMode ? 1 : 10, 600) || !Number.isInteger(stats.fuel) ||
@@ -18,8 +19,11 @@ export function moonValidator({ resolveLoadout, allowFailures = false, sheetMode
       if (input?.loadout?.speed !== stats.speed || input?.loadout?.fuel !== stats.fuel || input?.loadout?.money !== stats.money) {
         fail("Local upgrades differ from verified upgrades.", 409);
       }
-      return { state: { stats, totalDistance: input?.rulesVersion === 2 ? TOTAL_DISTANCE : 19500, startedAt: now.toISOString(), phase: "flying", distance: 0,
-        replay: input?.rulesVersion === 2 ? [[0, 0]] : null,
+      const rulesVersion = input?.rulesVersion;
+      const fullDistance = rulesVersion === 2 || rulesVersion === 3;
+      const flightPace = rulesVersion === 3 && scope === "mars" ? MARS_FLIGHT_PACE : 1;
+      return { state: { stats, rulesVersion, flightPace, totalDistance: fullDistance ? TOTAL_DISTANCE : 19500, startedAt: now.toISOString(), phase: "flying", distance: 0,
+        replay: fullDistance ? [[0, 0]] : null,
         fuel: stats.fuel, elapsed: 0, hold: 0, holdOut: 0, holdAt: 0, clapAt: 0,
         lastClapAt: -1000, claps: 0, sequence: 0, lastBatch: "", landingAt: 0 }, challenge: { protocol: "moon-flight-v1" } };
     },
@@ -51,14 +55,16 @@ export function moonValidator({ resolveLoadout, allowFailures = false, sheetMode
               !finite(frame.delta, 0, 600000) || !finite(frame.db, 0, 110)) fail("Invalid flight tick.");
           s.elapsed += frame.delta;
           if (s.elapsed > realElapsed + 2000) fail("Flight is faster than the server clock.");
-          const flightDelta = Math.min(frame.delta, s.fuel * 1000);
-          s.fuel -= frame.delta / 1000;
+          const burnRate = s.phase === "flying" ? (s.flightPace ?? 1) : 1;
+          const flightDelta = Math.min(frame.delta, s.fuel * 1000 / burnRate);
+          s.fuel = Math.max(0, s.fuel - frame.delta / 1000 * burnRate);
           if (s.phase === "flying") {
             const distanceBefore = s.distance;
-            s.distance = Math.min(totalDistance, s.distance + frame.db * s.stats.speed * flightDelta / 1000);
+            const speed = frame.db * s.stats.speed * (s.flightPace ?? 1);
+            s.distance = Math.min(totalDistance, s.distance + speed * flightDelta / 1000);
             if (s.replay) {
               const travelMs = frame.db && s.distance >= totalDistance
-                ? (s.distance - distanceBefore) / (frame.db * s.stats.speed) * 1000 : flightDelta;
+                ? (s.distance - distanceBefore) / speed * 1000 : flightDelta;
               const elapsed = s.elapsed - frame.delta + travelMs;
               const last = s.replay.at(-1);
               if (elapsed > last[0] && (elapsed - last[0] >= 500 || s.distance >= totalDistance || s.fuel <= 1e-9)) {
@@ -67,12 +73,15 @@ export function moonValidator({ resolveLoadout, allowFailures = false, sheetMode
             }
           }
           if (s.fuel <= 1e-9) { s.fuel = 0; flightFailure("Flight ran out of fuel."); continue; }
-          if (s.phase === "flying" && s.distance >= totalDistance) { s.phase = "holdPrompt"; s.holdAt = s.elapsed; }
+          if (s.phase === "flying" && s.distance >= totalDistance) {
+            s.phase = "holdPrompt";
+            s.holdAt = s.elapsed;
+            continue;
+          }
           if (s.phase === "clapPrompt" && s.elapsed - s.clapAt > 8000) { flightFailure("Clap challenge expired."); continue; }
           if (s.phase === "holdPrompt") {
-            // The browser resets dB to zero on the transition into the hold.
-            const db = s.holdAt === s.elapsed ? 0 : frame.db;
-            if (db >= 50 && db <= 60) { s.hold += frame.delta; s.holdOut = 0; }
+            const quietEnough = s.rulesVersion === 3 ? frame.db < 60 : frame.db >= 50 && frame.db <= 60;
+            if (quietEnough) { s.hold += frame.delta; s.holdOut = 0; }
             else { s.hold = 0; s.holdOut = s.elapsed - s.holdAt < 1500 ? 0 : s.holdOut + frame.delta; }
             if (s.holdOut > 2200) { flightFailure("Continuous hold challenge failed."); continue; }
             if (s.hold >= 5000) { s.phase = "clapPrompt"; s.clapAt = s.elapsed; }

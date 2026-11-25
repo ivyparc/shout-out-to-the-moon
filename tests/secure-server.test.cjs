@@ -36,30 +36,35 @@ async function server(options = {}) {
   const approve=async(save, playerId=id.playerId)=>request('admin_migration',{playerId,save,reason:'Verified test save'},admin);
   return { ...database,service,api,request,id,approve,advance:ms=>{now+=ms;},setDate:date=>{now=Date.parse(date);} };
 }
-function flight(stats, { complete=true, db=75 }={}) {
+function flight(stats, { complete=true, db=75, holdDb=55, scope }={}) {
   let now=100000;
   const frames=[];
+  let flightTime;
   const root={addEventListener(){},querySelector(){return null;},querySelectorAll(){return [];},style:{setProperty(){}}};
   class Clock extends Date { static now(){return now;} }
   const context=vm.createContext({ Date:Clock,navigator:{language:'en'},document:{getElementById:()=>root},window:{SHOUT_MOON_NATIVE_AUDIO:true,innerWidth:390,innerHeight:844,addEventListener(){},setInterval(){},setTimeout(){},clearTimeout(){},localStorage:{getItem(){return null;},setItem(){}}},frames });
   const source=readFileSync('src/web/main.js','utf8');
   vm.runInContext(source.slice(0,source.lastIndexOf('\nloadEconomy();')),context);
   const run=s=>vm.runInContext(s,context);
+  if (scope === "mars") run('mission = "mars"');
   run(`leaderboard={view:{online:false},record:e=>frames.push(e),landed(){},invalidate(){}}; state.speedMultiplier=${stats.speed}; state.fuelCapacity=${stats.fuel}; state.moneyMultiplier=${stats.money}; startGame();`);
   for(let i=0;i<20000;i++) {
     now+=50;
     const phase=run('state.phase');
     if(phase==='flying')run(`setMeasuredDb(${db})`);
-    if(phase==='holdPrompt')run('setMeasuredDb(55)');
+    if (phase === 'holdPrompt') {
+      flightTime ??= now - 100050;
+      run(`setMeasuredDb(${holdDb})`);
+    }
     if(phase==='clapPrompt'&&complete)run('registerClap(90)');
     run('updateGame(50)');
-    if(['landed','failed'].includes(run('state.phase')))return {frames:JSON.parse(JSON.stringify(frames)),duration:now-100000,earned:run('state.lastEarnedCoins'),phase:run('state.phase')};
+    if(['landed','failed'].includes(run('state.phase')))return {frames:JSON.parse(JSON.stringify(frames)),duration:now-100000,earned:run('state.lastEarnedCoins'),phase:run('state.phase'),flightTime};
   }
   throw new Error('Flight did not end');
 }
 async function finish(s,stats,options) {
-  const start=await s.api('start',{input:{rulesVersion:2,loadout:stats}}); assert.equal(start.status,200,JSON.stringify(start));
-  const trace=flight(stats,options); s.advance(trace.duration);
+  const start=await s.api('start',{input:{rulesVersion:3,loadout:stats}}); assert.equal(start.status,200,JSON.stringify(start));
+  const trace=flight(stats,options); s.advance(options?.serverElapsed ?? trace.duration);
   if (['landed','failed'].includes(trace.phase)) {
     assert.equal((await s.api('arrival',{runId:start.runId,elapsedMs:1})).status,200);
     s.advance(options?.uploadDelay || 0);
@@ -75,23 +80,49 @@ async function finish(s,stats,options) {
   return {runId:start.runId,trace,end};
 }
 
-test('distance minus time ranks all flights; personal best and legacy records remain intact',async()=>{
+test('arrival bonus ranks landings; personal best and legacy records remain intact',async()=>{
   const s=await server(), stats={speed:300,fuel:40,money:1.5};
   const approval=await s.approve({...stats,coins:0}); await s.api('migrate',{code:approval.code});
   s.db.prepare('insert into moon_scores(player,period,score,achieved_at) values(?,?,?,?)').run(s.id.playerId,'2026-10',999999,Date.parse('2026-10-22'));
   const first=await finish(s,stats); const board=await s.api(null,{},'GET');
-  assert.equal(board.currentPlayer.score,384399-first.trace.duration/1000);
+  assert.equal(board.currentPlayer.score,384.4 + (120 - first.trace.duration / 1000) * 3);
   const achieved=board.currentPlayer.updatedAt;
   await finish(s,stats);
   assert.equal((await s.api(null,{},'GET')).currentPlayer.updatedAt,achieved);
   const slower=await finish(s,stats,{db:65});
   assert.ok(slower.trace.duration>first.trace.duration);
+  s.db.prepare('update moon_flight_scores set score=999999 where run_id=?').run(slower.runId);
   assert.equal((await s.api(null,{},'GET')).currentPlayer.score,board.currentPlayer.score);
   assert.equal((await s.api('upgrade',{type:'speed',expected:300})).status,200);
   const faster=await finish(s,{...stats,speed:420});
   assert.ok(faster.trace.duration<first.trace.duration);
-  assert.equal((await s.api(null,{},'GET')).currentPlayer.score,384399-faster.trace.duration/1000);
+  assert.equal((await s.api(null,{},'GET')).currentPlayer.score,384.4 + (120 - faster.trace.duration / 1000) * 3);
   assert.equal(s.db.prepare('select score from moon_scores').get().score,999999);
+});
+
+test('both modes apply the 120-second landing cutoff using the server clock', async () => {
+  const s = await server();
+  const stats = { speed: 300, fuel: 40, money: 1.5 };
+  const approval = await s.approve({ ...stats, coins: 0 });
+  await s.api('migrate', { code: approval.code });
+  for (const [scope, table] of [['default', 'moon_flight_scores'], ['mars', 'mars_flight_scores']]) {
+    const api = (action, body = {}, method) => s.api(action, { ...body, scope }, method);
+    for (const [serverElapsed, expected] of [[120000, 384], [120001, 384], [119999, 384.403]]) {
+      const { runId } = await finish({ ...s, api }, stats, { serverElapsed, scope, holdDb: scope === "mars" ? 35 : 0 });
+      assert.equal((await api('submit', { runId })).score, expected);
+      assert.equal(s.db.prepare(`select score from ${table} where run_id=?`).get(runId).score, expected);
+    }
+    assert.equal((await api(null, {}, 'GET')).currentPlayer.score, 384.403);
+  }
+});
+
+test('Mars takes 25% longer to reach the hold challenge at the same thrust', () => {
+  const stats = { speed: 300, fuel: 40, money: 1.5 };
+  const moon = flight(stats, { holdDb: 0 });
+  const mars = flight(stats, { scope: 'mars', holdDb: 35 });
+  assert.equal(moon.phase, 'landed');
+  assert.equal(mars.phase, 'landed');
+  assert.ok(Math.abs(mars.flightTime - moon.flightTime * 1.25) <= 50);
 });
 
 test('premature arrival, forged timestamps and cross-player arrival cannot create a ranking',async()=>{
@@ -179,7 +210,7 @@ test('failed flight earns server-calculated coins once; upgrade retries cannot c
   await s.api('event',{runId:f.runId,event:{type:'finish'}});
   assert.equal((await s.api('profile')).profile.coins,f.trace.earned);
   assert.equal((await s.api('submit',{runId:f.runId})).status,200);
-  assert.equal((await s.api(null,{},'GET')).currentPlayer.score,7500-10);
+  assert.ok(Math.abs((await s.api(null,{},'GET')).currentPlayer.score - 7.5) < 1e-9);
   const attempts=await Promise.all([s.api('upgrade',{type:'speed',expected:10}),s.api('upgrade',{type:'speed',expected:10})]);
   assert.equal(attempts.filter(r=>r.status===200).length,1);
   const p=(await s.api('profile')).profile; assert.equal(p.speed,14); assert.equal(p.coins,f.trace.earned-50);
@@ -193,8 +224,8 @@ test('Moon ranking uses server arrival time; retries do not duplicate rewards or
   const submitted=await s.api('submit',{runId:f.runId,score:999999}); assert.equal(submitted.status,200);
   await s.api('submit',{runId:f.runId});
   assert.equal((await s.api('profile')).profile.coins,6265);
-  const board=await s.api(null,{},'GET'); assert.equal(board.entries.length,1); assert.equal(board.entries[0].score,384399-f.trace.duration/1000); assert.equal(board.currentPlayer.rank,1);
-  assert.equal(board.metric,'distance_minus_seconds'); assert.equal(board.order,'desc');
+  const board=await s.api(null,{},'GET'); assert.equal(board.entries.length,1); assert.equal(board.entries[0].score,384.4 + (120 - f.trace.duration / 1000) * 3); assert.equal(board.currentPlayer.rank,1);
+  assert.equal(board.metric,'distance_and_arrival_bonus'); assert.equal(board.order,'desc');
   const second=await finish(s,stats); await s.api('submit',{runId:second.runId});
   assert.equal((await s.api(null,{},'GET')).entries.length,1);
 });
@@ -300,7 +331,7 @@ test('real game + client + secure API submits landing and preserves the original
   assert.equal(run('leaderboard.view.status'),'submitted',run('leaderboard.view.error'));
   assert.equal(run('state.coins'),6265);
   assert.equal(run('state.tryCount'),1);
-  assert.equal(run('leaderboard.view.snapshot.currentPlayer.score'),384399-(clock-100000)/1000);
+  assert.equal(run('leaderboard.view.snapshot.currentPlayer.score'),(744400 - (clock - 100000) * 3) / 1000);
   assert.equal(storage.get('stats.coins'),'500');
   run('leaderboard.disconnect(); loadEconomy();');
   assert.equal(run('state.coins'),500);
@@ -343,14 +374,14 @@ test('monthly best heights exclude self and reset at Toronto midnight on the fir
   assert.equal(s.db.prepare('select count(*) as n from moon_flight_scores').get().n, 3);
 });
 
-test('failed-flight ranks prefer more distance, subtract verified elapsed seconds and ignore client scores', async () => {
+test('failed-flight ranks use distance alone and ignore client scores', async () => {
   const s = await server();
   const first = await finish(s, {speed:10,fuel:10,money:1}, {db:55,uploadDelay:60000});
   assert.equal(first.end.score, 10000);
   const forged = await s.api('submit', {runId:first.runId,score:999999999,distance:384399,time:0});
-  assert.equal(forged.score, 5490);
+  assert.ok(Math.abs(forged.score - 5.5) < 1e-9);
   const second = await finish(s, {speed:10,fuel:10,money:1}, {db:60});
-  assert.equal((await s.api(null, {}, 'GET')).currentPlayer.score, 5990);
+  assert.ok(Math.abs((await s.api(null, {}, 'GET')).currentPlayer.score - 6) < 1e-9);
   await s.api('submit', {runId:second.runId});
   assert.equal(s.db.prepare('select count(*) as n from moon_flight_scores').get().n, 2);
 });
@@ -440,7 +471,7 @@ test('sheet settings use the official wallet and ranking, with both loadouts pre
   assert.equal(score.earned, 270);
   assert.equal(score.profile.coins, 408);
   const board = await s.api(null,{period:'all'},'GET');
-  assert.equal(board.currentPlayer.score, 22488);
+  assert.ok(Math.abs(board.currentPlayer.score - 22.5) < 1e-9);
   const viewer = await s.request('identity');
   const replay = await s.request('replay', {}, viewer.token, 'GET');
   assert.ok(Math.abs(replay.samples.at(-1)[1] - 22500) < 1e-6);
@@ -464,7 +495,7 @@ test('Mars ranks only Mars launches and reuses the Moon player and nickname', as
   const before = await s.api(null, {}, 'GET');
   assert.equal(before.entries.length, 1);
   assert.equal((await mars(null, {}, 'GET')).entries.length, 0);
-  const { runId } = await finish({ ...s, api: mars }, stats);
+  const { runId } = await finish({ ...s, api: mars }, stats, { scope: "mars" });
   await s.api('submit', { runId });
   assert.equal((await mars(null, {}, 'GET')).currentPlayer.name, 'LunarRabbit');
   assert.deepEqual((await s.api(null, {}, 'GET')).entries, before.entries);

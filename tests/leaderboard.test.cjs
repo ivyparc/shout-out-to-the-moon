@@ -92,8 +92,8 @@ async function fixture(options = {}) {
       const phase = run('state.phase');
       if (phase === 'flying') run('setMeasuredDb(75);');
       if (phase === 'holdPrompt') {
-        if (interruptHold && !interrupted && run('state.holdMs') >= 2500) { run('setMeasuredDb(61);'); interrupted = true; }
-        run('setMeasuredDb(55);');
+        if (interruptHold && !interrupted && run('state.holdMs') >= 2500) { run('setMeasuredDb(60);'); assert.equal(run('state.holdMs'), 0); interrupted = true; }
+        run('setMeasuredDb(35);');
       }
       if (phase === 'clapPrompt' && land) run('registerClap(90);');
       run('updateGame(50);');

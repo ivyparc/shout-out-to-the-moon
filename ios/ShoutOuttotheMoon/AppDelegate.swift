@@ -530,6 +530,7 @@ select {
   bottom: 0;
   width: 24px;
   height: 24px;
+  object-fit: contain;
 }
 
 .world {
@@ -1015,8 +1016,6 @@ select {
 @keyframes flight-trail { to { transform: translateY(750%); } }
 @media (prefers-reduced-motion: reduce) { .speed-trails { display: none; } }
 
-.flame-left { transform: translateX(calc(-1 * var(--flame-spread, 7%))) rotate(-3deg); transform-origin: 50% 0; }
-.flame-right { transform: translateX(var(--flame-spread, 7%)) rotate(3deg); transform-origin: 50% 0; }
 .flight-markers { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
 .flight-marker { position: absolute; left: 12px; max-width: calc(100% - 24px); white-space: nowrap; color: #fffb00; font-size: 13px; line-height: 1.1; text-align: center; transform: translateY(-50%); text-shadow: 0 1px 2px #35344c; }
 .flight-marker i { display: block; width: 8px; height: 8px; margin: 0 auto 3px; background: #fffb00; border-radius: 50%; }
@@ -1269,14 +1268,12 @@ select {
 }
 .sheet-settings-message:empty { display: none; }
 
-.mission-menu { min-height: 100dvh; display: grid; place-items: center; background: #120f28; color: #fff8ec; padding: 24px; box-sizing: border-box; }
-.mission-menu section { width: min(100%, 400px); }
-.mission-menu h1 { margin: 0 0 24px; font-size: clamp(26px, 6vw, 38px); }
-.mission-card { width: 100%; display: flex; align-items: center; gap: 24px; padding: 22px; margin: 12px 0; border: 1px solid #666285; border-radius: 20px; background: #282646; color: inherit; font: inherit; font-size: 22px; font-weight: 700; cursor: pointer; }
-.mission-card:focus-visible { outline: 3px solid white; }
-.mission-card img { width: 64px; height: 64px; object-fit: contain; }
+.mission-menu { display: grid; place-items: center; overflow: auto; background: #120f28; color: #fff8ec; }
+.mission-options { width: 88%; max-width: 400px; padding-block: 16px; }
+.mission-menu h1 { margin: 0 0 20px; font-size: clamp(22px, 8cqw, 38px); }
+.mission-card { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: clamp(12px, 5cqw, 24px); padding: clamp(12px, 5cqw, 22px); margin: 12px 0; border: 1px solid #666285; border-radius: 20px; background: #282646; color: inherit; font: inherit; font-size: clamp(16px, 5.5cqw, 22px); font-weight: 700; text-align: left; cursor: pointer; }
+.mission-card img { flex: none; width: clamp(36px, 15cqw, 64px); aspect-ratio: 1; object-fit: contain; }
 .mars-card { background: #38233b; border-color: #8a5b69; }
-.mission-card picture { display: grid; }
 .mars-flight .background-track { --scenery-zoom: 1; }
 .mars-strip { background-color: #101b51; background-size: cover; background-position: center; }
 .mars-prop { position: absolute; width: 15%; left: 13%; top: 43%; }
@@ -1621,7 +1618,7 @@ const MARS_SCENERY = [
   "nebula", "nebula", "asteroids", "approach", "approach",
 ];
 const MARS_SPRITES = {
-  "Launchpad_Big.png": "mars-moon.png", "Launchpad_Small.png": "mars-launch.png",
+  "Launchpad_Big.png": "mars-moon.png", "Launchpad_Small.png": "mars-moon.png",
   "MiniMoon_64.png": "mars-planet.png", "Moon.png": "mars-planet.png",
   "Moon_Rabbit.png": "mars-planet.png", "Rocket_256.png": "mars-rocket.png",
   "MiniRocket_64.png": "mars-rocket.png", "MiniRocket.png": "mars-rocket.png",
@@ -1651,7 +1648,6 @@ const UFO_ENABLED = false; // Temporary: retain encounter logic for later reacti
 const CLAP_WINDOW_MS = 8000;
 const CLAP_MIN_GAP_MS = 260;
 const CLAP_DB_THRESHOLD = 72;
-const HOLD_TARGET_MIN = 50;
 const HOLD_TARGET_MAX = 60;
 const HOLD_REQUIRED_MS = 5000;
 const HOLD_FAIL_GRACE_MS = 2200;
@@ -1668,7 +1664,7 @@ const DEFAULT_STATS = {
 
 // November balance: direct dB × Speed, 1 tonne/second, and 9–10 flights
 // at 65–75dB with alternating engine/fuel purchases from a fresh save.
-const BALANCE = { fuelBurnPerSecond: 1 };
+const BALANCE = { fuelBurnPerSecond: 1, marsFlightPace: 0.8 };
 
 const DISTANCE_SEGMENTS = [
   { name: "Launch Pad", distance: 0 },
@@ -1703,12 +1699,12 @@ const STRINGS = {
     flying: "Make some noise!",
     avoidUfo: "UFO를 피하세요!",
     avoidUfoHint: "소리를 크게/작게 내서 속도를 바꾸세요",
-    getReadyHold: "곧 50~60dB 유지!",
+    getReadyHold: "곧 60dB 미만 유지!",
     getReadyClap: "다음은 박수 3번!",
     clapPrompt: "박수 3번!",
     clapHint: "8초 안에 박수 3번 또는 아래 Clap 버튼",
-    holdPrompt: "50~60dB 유지!",
-    holdHint: "5초 동안 50~60dB를 유지하세요",
+    holdPrompt: "60dB 미만 유지!",
+    holdHint: "5초 동안 60dB 미만을 유지하세요",
     landing: "Landing...",
     landedTitle: "Congratulations!",
     landedBody: "You've landed successfully.",
@@ -1723,7 +1719,7 @@ const STRINGS = {
     voicePermission: "마이크·음성 인식 권한을 허용한 뒤 Voice를 눌러주세요.",
     voiceHeard: "인식",
     clapFailed: "박수 3번을 8초 안에 완료하지 못했습니다.",
-    holdFailed: "50~60dB를 5초간 유지하지 못했습니다.",
+    holdFailed: "60dB 미만을 5초간 유지하지 못했습니다.",
     ufoFailed: "UFO에 닿았습니다. UFO가 보이는 동안은 dB로 속도를 조절해 피하세요.",
     energyFailed: "Energy가 0이 되었습니다.",
     distance: "Distance",
@@ -1743,12 +1739,12 @@ const STRINGS = {
     flying: "Make some noise!",
     avoidUfo: "Avoid the UFO!",
     avoidUfoHint: "Change your dB to speed up or slow down",
-    getReadyHold: "Get ready: hold 50-60dB!",
+    getReadyHold: "Get ready: stay below 60 dB!",
     getReadyClap: "Next: clap 3 times!",
     clapPrompt: "Clap 3 times!",
     clapHint: "Clap 3 times within 8 seconds or tap the Clap button below",
-    holdPrompt: "Hold 50-60dB!",
-    holdHint: "Keep 50-60dB steady for 5 seconds",
+    holdPrompt: "Stay below 60 dB!",
+    holdHint: "Stay below 60 dB for 5 seconds",
     landing: "Landing...",
     landedTitle: "Congratulations!",
     landedBody: "You've landed successfully.",
@@ -1763,7 +1759,7 @@ const STRINGS = {
     voicePermission: "Allow microphone and speech recognition, then press Voice to retry.",
     voiceHeard: "Heard",
     clapFailed: "You did not clap 3 times within 8 seconds.",
-    holdFailed: "You did not hold 50-60dB for 5 seconds.",
+    holdFailed: "You did not stay below 60 dB for 5 seconds.",
     ufoFailed: "You touched the UFO. Change dB to dodge it while it is on screen.",
     energyFailed: "Energy reached zero.",
     distance: "Distance",
@@ -1907,12 +1903,12 @@ function renderLeaderboard() {
   const ko = state.language === "ko";
   const view = leaderboard?.view;
   const messages = ko ? {
-    unconfigured: "랭킹 서버 연결 준비 중이에요.", ready: "점수 = 거리(km) − 시간(초).",
+    unconfigured: "랭킹 서버 연결 준비 중이에요.", ready: "미도착: 거리(km) ÷ 1,000. 도착: 384.4 + (120 − 시간(초)) × 3. 120초 이상: 384점.",
     starting: "비행 준비 중…", loading: "탐험 기록을 불러오는 중…",
     submitting: "비행 기록을 등록하고 있어요…", submitted: "비행 기록이 등록됐어요!",
     error: "연결을 확인하고 새로고침해 주세요.",
   } : {
-    unconfigured: "Getting the rankings ready.", ready: "Score = distance (km) − time (s).",
+    unconfigured: "Getting the rankings ready.", ready: "No arrival: distance (km) ÷ 1,000. Arrival: 384.4 + (120 − seconds) × 3. At 120 s or more: 384 points.",
     starting: "Preparing your flight…", loading: "Loading explorers…",
     submitting: "Saving your flight…", submitted: "Your flight is on the board!",
     error: "Check your connection and refresh.",
@@ -1933,7 +1929,7 @@ function renderLeaderboard() {
   const row = (entry, personal = false) => `<tr class="${personal ? 'my-ranking' : entry.rank === own?.rank ? 'own-list-row' : ''}">
     <td><span class="rank-number rank-${entry.rank || 0}">${escapeHtml(entry.rank || "—")}</span></td>
     <td><span class="ranking-name">${escapeHtml(entry.name || (ko ? "나의 기록" : "Your record"))}</span>${personal ? `<span class="ranking-you">${ko ? "나" : "YOU"}</span>` : entry.isToday ? `<span class="ranking-today">${ko ? '오늘' : 'Today'}</span>` : ''}</td>
-    <td><span class="ranking-time">${escapeHtml(Number.isFinite(entry.score) ? formatStat(entry.score) : "—")}</span></td></tr>`;
+    <td><span class="ranking-time">${escapeHtml(Number.isFinite(entry.score) ? entry.score.toLocaleString("en-US", { maximumFractionDigits: 3 }) : "—")}</span></td></tr>`;
   panel.innerHTML = `
     <div class="leaderboard-toolbar" ${leaderboardProfileOpen ? 'inert' : ''}>
       <strong class="leaderboard-period-label">${ko ? "전체 기록" : "All time"}</strong>
@@ -2046,8 +2042,8 @@ function acceptMicrophoneFrame(dbfs, peak = 0) {
       microphoneMeter.calibration = null;
     }
   }
-  const db = clampDb(dbfs + microphoneMeter.offset);
-  if (state.phase === "clapPrompt") registerClap(db);
+  const db = dbfs + microphoneMeter.offset;
+  if (state.phase === "clapPrompt") registerClap(clampDb(db));
   else setMeasuredDb(db);
   updateMeterCalibrationUi();
 }
@@ -2277,7 +2273,7 @@ function formatStat(value) {
 }
 
 function currentSpeedKms() {
-  return clamp(state.db, 0, 110) * state.speedMultiplier;
+  return clamp(state.db, 0, 110) * state.speedMultiplier * (isMars() ? BALANCE.marsFlightPace : 1);
 }
 
 function getFuelRatio() {
@@ -2457,7 +2453,7 @@ function startGame() {
   // Gameplay starts in this turn. The adapter buffers ticks while the server
   // registers this flight; there are no profile/retry round trips on this path.
   const registration = rankedPlay()
-    ? leaderboard.begin({ rulesVersion: 2, recoverStale: true, loadout: { speed: state.speedMultiplier, fuel: state.fuelCapacity, money: state.moneyMultiplier } })
+    ? leaderboard.begin({ rulesVersion: 3, recoverStale: true, loadout: { speed: state.speedMultiplier, fuel: state.fuelCapacity, money: state.moneyMultiplier } })
     : null;
   microphoneMeter.calibration = null;
   speech.shouldListen = false;
@@ -2582,9 +2578,7 @@ function failGame(message) {
   updateUi();
 }
 
-function reset() {
-  if (rankedPlay() && isRunningPhase()) void leaderboard.abandon();
-  else leaderboard?.invalidate();
+function resetFlightState() {
   state.phase = "waitingLaunch";
   state.db = 0;
   state.maxDb = 0;
@@ -2612,17 +2606,21 @@ function reset() {
   state.landingSceneY = 50;
   state.status = STRINGS[state.language].micStatus;
   speech.shouldListen = true;
+}
+
+function reset() {
+  if (rankedPlay() && isRunningPhase()) void leaderboard.abandon();
+  else leaderboard?.invalidate();
+  resetFlightState();
   updateUi();
   startVoiceInput({ force: true });
 }
 
 function setMeasuredDb(value) {
   if (!canAcceptDb()) return;
-  state.db = clampDb(value);
-  if (state.phase === "holdPrompt" && (state.db < HOLD_TARGET_MIN || state.db > HOLD_TARGET_MAX)) {
+  state.db = state.phase === "holdPrompt" ? clamp(value, 0, 110) : clampDb(value);
+  if (state.phase === "holdPrompt" && state.db >= HOLD_TARGET_MAX) {
     leaderboard?.record({ type: "hold-reset" });
-  }
-  if (state.phase === "holdPrompt" && (state.db < HOLD_TARGET_MIN || state.db > HOLD_TARGET_MAX)) {
     // Reset on every sample, including brief excursions between game ticks.
     state.holdMs = 0;
   }
@@ -2646,11 +2644,19 @@ function registerClap(db) {
   }
 }
 
+function showsMissionSwitch() {
+  return state.phase === "waitingLaunch" || state.phase === "failed";
+}
+
+function missionSwitchBusy() {
+  return !!(leaderboard?.view.busy || leaderboard?.pendingCount() || state.upgradePending || sheetSettingsLoading);
+}
+
 function handleButtonAction(target) {
   if (target.disabled) return false;
   if (microphoneMeter.context?.state === "suspended") microphoneMeter.context.resume().catch(() => {});
   if (target.dataset.action === "choose-mission") {
-    if (state.phase !== "waitingLaunch" || leaderboard?.view.busy || leaderboard?.pendingCount() || state.upgradePending || sheetSettingsLoading) return true;
+    if (!showsMissionSwitch() || missionSwitchBusy()) return true;
     leaderboard?.subscribe(() => {});
     leaderboard = null;
     leaderboardMode = false;
@@ -2821,16 +2827,23 @@ function flightGauge(kind, icon) {
 }
 
 function render() {
+  const board = getBoardSize();
+  const boardSize = `width:${board.width}px;height:${board.height}px`;
   if (!mission) {
     const ko = state.language === "ko";
-    root.innerHTML = `<main class="mission-menu"><section><h1>${ko ? "어디로 떠날까요?" : "Choose your flight"}</h1>
-      <button class="mission-card" data-mission="moon"><img src="${asset("Moon.png")}" alt=""><span>${ko ? "지구 → 달" : "Earth → Moon"}</span></button>
-      <button class="mission-card mars-card" data-mission="mars"><picture><source media="(prefers-reduced-motion: reduce)" srcset="${asset("mars-rabbit.png")}"><img src="${asset("mars-departure.webp")}" alt=""></picture><span>${ko ? "달 → 화성" : "Moon → Mars"}</span></button>
-    </section></main>`;
+    root.innerHTML = `
+      <main class="app">
+        <section class="phone mission-menu" style="${boardSize}">
+          <div class="mission-options">
+            <h1>${ko ? "어디로 떠날까요?" : "Choose your flight"}</h1>
+            <button class="mission-card" data-mission="moon"><span>${ko ? "지구 → 달" : "Earth → Moon"}</span><img src="${asset("Moon.png")}" alt=""></button>
+            <button class="mission-card mars-card" data-mission="mars"><span>${ko ? "달 → 화성" : "Moon → Mars"}</span><img src="${asset("mars-planet.png")}" alt=""></button>
+          </div>
+        </section>
+      </main>`;
     return;
   }
   const text = STRINGS[state.language];
-  const board = getBoardSize();
   root.querySelectorAll(".background-video").forEach(video => video.pause());
   root.innerHTML = `
     <main class="app ${isMars() ? "mars-flight" : ""}">
@@ -2838,7 +2851,7 @@ function render() {
         <h1>${isMars() ? "Shout Out to Mars" : text.title}</h1>
         <p>${isMars() ? destination("", "Launch from the Moon and fly to Mars.", "", "달에서 발사해 화성에 착륙하세요.") : text.subtitle}</p>
       </header>
-      <section class="phone" style="width:${board.width}px;height:${board.height}px">
+      <section class="phone" style="${boardSize}">
         <div class="sky">
           <div class="hud">
             <div class="hud-tools"><button type="button" class="hud-upgrade mission-switch" data-action="choose-mission">${state.language === "ko" ? "항로" : "Flights"}</button><button type="button" class="leaderboard-launcher" data-leaderboard="open" aria-label="${state.language === "ko" ? "순위 보기" : "View rankings"}" aria-haspopup="dialog" aria-controls="moon-leaderboard" aria-expanded="${leaderboardOpen}">${hudIcon("trophy")}</button>
@@ -2875,9 +2888,9 @@ function render() {
           <div class="rocket"><div class="rocket-thruster">
             <img class="rocket-art" src="${asset("Rocket_256.png")}" alt="" />
             <div class="flame" aria-hidden="true">
-              ${[1, 2, 3, 4, 5].map((level) => ["left", "right"].map(side => `
-                <img class="flame-image flame-${side} flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
-              `).join("")).join("")}
+              ${[1, 2, 3, 4, 5].map((level) => `
+                <img class="flame-image flame-level-${level}" src="${asset(`Flame_Lv${level}.png`)}" alt="" />
+              `).join("")}
             </div>
           </div>
           </div>
@@ -3062,8 +3075,8 @@ function updateUi() {
   if (leaderboardButton) leaderboardButton.disabled = isRunningPhase() || ["landing", "preparing"].includes(state.phase);
   const missionButton = root.querySelector(".mission-switch");
   if (missionButton) {
-    missionButton.hidden = state.phase !== "waitingLaunch";
-    missionButton.disabled = !!(leaderboard?.view.busy || leaderboard?.pendingCount() || state.upgradePending || sheetSettingsLoading);
+    missionButton.hidden = !showsMissionSwitch();
+    missionButton.disabled = missionSwitchBusy();
   }
   const upgradeButton = root.querySelector('[data-action="open-upgrades"]');
   if (upgradeButton) { upgradeButton.hidden = !["waitingLaunch", "failed", "landed", "replayPrompt"].includes(state.phase); upgradeButton.disabled = upgradeButton.hidden; }
@@ -3076,7 +3089,7 @@ function updateUi() {
       ? (state.language === "ko" ? "시트 설정 적용됨" : "Sheet settings applied") : "");
     if (message.textContent !== text) message.textContent = text;
   }
-  const displayedDb = state.phase === "waitingLaunch" ? 0 : Math.round(state.db);
+  const displayedDb = state.phase === "waitingLaunch" ? 0 : Math.floor(state.db);
   const range = getRange(state.db);
   const flightDistance = clamp(state.progress, 0, 1);
   const fuelRatio = getFuelRatio();
@@ -3170,7 +3183,6 @@ function updateUi() {
     flame.style.visibility = state.db > 0 ? "visible" : "hidden";
     flame.style.filter = `brightness(${0.85 + step * 0.025}) saturate(${1 + step * 0.025}) drop-shadow(0 0 ${step * 0.55}px rgba(255,174,0,${0.15 + step * 0.025}))`;
     flame.style.animationDuration = `${Math.max(65, 280 - step * 9)}ms`;
-    flame.style.setProperty("--flame-spread", `${1 + step * .12}%`);
     flame.style.setProperty("--flame-pulse", String(1.02 + step * 0.004));
     root.querySelectorAll(".flame-image").forEach((image) => {
       image.classList.toggle("active", image.classList.contains(`flame-level-${level}`));
@@ -3371,14 +3383,15 @@ function hasUfoClearedRocketForChallenge() {
 function updateGame(delta) {
   if (isRunningPhase()) leaderboard?.record({ type: "tick", delta, db: state.db });
   const text = STRINGS[state.language];
-  const flightDelta = isRunningPhase() ? Math.min(delta, state.fuelRemaining * 1000 / BALANCE.fuelBurnPerSecond) : delta;
+  const burnRate = BALANCE.fuelBurnPerSecond * (isMars() && isDistancePhase() ? BALANCE.marsFlightPace : 1);
+  const flightDelta = isRunningPhase() ? Math.min(delta, state.fuelRemaining * 1000 / burnRate) : delta;
   if (isDistancePhase()) {
     state.distanceKm = Math.min(TOTAL_DISTANCE_KM * MOON_TRIGGER_PROGRESS, state.distanceKm + currentSpeedKms() * (flightDelta / 1000));
     syncProgressFromDistance();
   }
   advanceWorldScroll(flightDelta);
   if (isRunningPhase()) {
-    state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * BALANCE.fuelBurnPerSecond);
+    state.fuelRemaining = Math.max(0, state.fuelRemaining - (delta / 1000) * burnRate);
     if (state.fuelRemaining <= 1e-9) {
       state.fuelRemaining = 0;
       failGame(text.energyFailed);
@@ -3394,7 +3407,10 @@ function updateGame(delta) {
   if (state.phase === "flying") {
     checkUfoCollision();
     if (state.phase !== "flying") return;
-    if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedRocketForChallenge()) beginHoldChallenge();
+    if (state.progress >= MOON_TRIGGER_PROGRESS && hasUfoClearedRocketForChallenge()) {
+      beginHoldChallenge();
+      return;
+    }
   }
 
   if (state.phase === "clapPrompt" && Date.now() - state.clapStartedAt > CLAP_WINDOW_MS) {
@@ -3402,7 +3418,7 @@ function updateGame(delta) {
   }
 
   if (state.phase === "holdPrompt") {
-    if (state.db >= HOLD_TARGET_MIN && state.db <= HOLD_TARGET_MAX) {
+    if (state.db < HOLD_TARGET_MAX) {
       state.holdMs += delta;
       state.holdOutMs = 0;
     } else {
@@ -3765,6 +3781,7 @@ function startMission() {
   state.tryCount = 0;
   state.flightHistory = [];
   loadEconomy();
+  resetFlightState();
   render();
   void leaderboard?.retry();
   if (leaderboard?.view.online) void board.connect().then(() => board.refresh());

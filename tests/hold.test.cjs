@@ -33,8 +33,8 @@ test('2 seconds + out of range + 3 seconds does not pass; a new 5 seconds does',
   assert.equal(run('state.phase'), 'clapPrompt');
 });
 
-test('even a brief excursion between ticks resets progress on either side', () => {
-  for (const outside of [49, 61]) {
+test('even a brief reading at or above 60 dB resets progress between ticks', () => {
+  for (const outside of [60, 61]) {
     const run = game();
     run(`setMeasuredDb(55); updateGame(2000); setMeasuredDb(${outside}); setMeasuredDb(55); updateGame(3000);`);
     assert.equal(run('state.holdMs'), 3000);
@@ -42,15 +42,15 @@ test('even a brief excursion between ticks resets progress on either side', () =
   }
 });
 
-test('50 and 60 are inclusive; uninterrupted five seconds passes', () => {
+test('uninterrupted five seconds below 60 dB passes without a minimum', () => {
   const run = game();
-  run('setMeasuredDb(50); updateGame(2500); setMeasuredDb(60); updateGame(2500);');
+  run('setMeasuredDb(0); updateGame(2500); setMeasuredDb(59.9); updateGame(2500);');
   assert.equal(run('state.phase'), 'clapPrompt');
 });
 
 test('out-of-range ticks reset progress during initial grace and still enforce failure grace', () => {
   const run = game();
-  run('state.holdStartedAt = Date.now(); state.holdMs = 1000; state.db = 49; updateGame(50);');
+  run('state.holdStartedAt = Date.now(); state.holdMs = 1000; state.db = 60; updateGame(50);');
   assert.equal(run('state.holdMs'), 0);
   assert.equal(run('state.phase'), 'holdPrompt');
   run('state.holdStartedAt = Date.now() - 2000; updateGame(2201);');
