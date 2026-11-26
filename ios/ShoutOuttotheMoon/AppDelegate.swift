@@ -3,6 +3,29 @@ import Speech
 import UIKit
 import WebKit
 
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+    guard let windowScene = scene as? UIWindowScene,
+          let app = UIApplication.shared.delegate as? AppDelegate else { return }
+    app.connectWindow(to: windowScene)
+    window = app.window
+  }
+
+  func sceneDidEnterBackground(_ scene: UIScene) {
+    (UIApplication.shared.delegate as? AppDelegate)?.applicationDidEnterBackground(UIApplication.shared)
+  }
+
+  func sceneWillEnterForeground(_ scene: UIScene) {
+    (UIApplication.shared.delegate as? AppDelegate)?.applicationWillEnterForeground(UIApplication.shared)
+  }
+
+  func sceneDidDisconnect(_ scene: UIScene) {
+    (UIApplication.shared.delegate as? AppDelegate)?.applicationDidEnterBackground(UIApplication.shared)
+  }
+}
+
 @UIApplicationMain
 public class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
   public var window: UIWindow?
@@ -22,7 +45,17 @@ public class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelega
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    let window = UIWindow(frame: UIScreen.main.bounds)
+    return true
+  }
+
+  public func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    let configuration = UISceneConfiguration(name: "Game", sessionRole: connectingSceneSession.role)
+    configuration.delegateClass = SceneDelegate.self
+    return configuration
+  }
+
+  func connectWindow(to windowScene: UIWindowScene) {
+    let window = UIWindow(windowScene: windowScene)
     let viewController = UIViewController()
     viewController.view.backgroundColor = UIColor(red: 0.96, green: 0.97, blue: 0.99, alpha: 1)
 
@@ -75,7 +108,6 @@ public class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelega
     self.statusLabel = statusLabel
 
     webView.loadHTMLString(Self.gameHTML, baseURL: Bundle.main.bundleURL)
-    return true
   }
 
   public func applicationDidEnterBackground(_ application: UIApplication) {

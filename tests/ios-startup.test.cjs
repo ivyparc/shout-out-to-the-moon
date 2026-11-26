@@ -12,3 +12,16 @@ test('launch storyboard constraints refer to existing objects', () => {
     }
   }
 });
+
+test('native launch adopts the scene lifecycle required by UIKit', () => {
+  const {execFileSync} = require('node:child_process');
+  const root = path.join(__dirname, '..');
+  const info = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(root, 'ios/ShoutOuttotheMoon/Info.plist')], {encoding:'utf8'}));
+  const manifest = info.UIApplicationSceneManifest;
+  assert.equal(manifest.UIApplicationSupportsMultipleScenes, false);
+  assert.equal(manifest.UISceneConfigurations.UIWindowSceneSessionRoleApplication[0].UISceneDelegateClassName, '$(PRODUCT_MODULE_NAME).SceneDelegate');
+  const swift = fs.readFileSync(path.join(root, 'ios/ShoutOuttotheMoon/AppDelegate.swift'), 'utf8');
+  assert.match(swift, /class SceneDelegate: UIResponder, UIWindowSceneDelegate/);
+  assert.match(swift, /UIWindow\(windowScene: windowScene\)/);
+  assert.doesNotMatch(swift, /UIWindow\(frame: UIScreen.main.bounds\)/);
+});
